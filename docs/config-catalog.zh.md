@@ -1331,6 +1331,69 @@ export interface Config {
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-experimental-worktree -->
 
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-experimental-xiaozhi -->
+<a id="deepseek-aidsh-experimental-xiaozhi"></a>
+
+## `@deepseek-ai/dsh-experimental-xiaozhi`
+
+- `inject`: `webServer` · `sessionController` · `sessions` · `agents`
+- `source`: [`packages/experimental/xiaozhi/src/types.ts:20`](../packages/experimental/xiaozhi/src/types.ts)
+
+```ts config-catalog
+/** Resolved gateway configuration supplied by the Cordis configuration schema. */
+export interface GatewayConfig {
+  /** Exact WebSocket upgrade pathname without a trailing slash. @default /xiaozhi/v1 */
+  path: string
+  /** Speech-only WebSocket service URL using the documented UUID-prefixed Opus protocol. */
+  voiceUrl: string
+  /** Shared token sent to the speech service in an Authorization Bearer header. */
+  voiceToken: string
+  /** Explicit device bindings; device identities and session identities must each be unique. */
+  devices: DeviceBinding[]
+  /** Accepted wake prefixes, matched longest first. @default [小智小智] */
+  wakeWords: string[]
+  /** Whole-utterance commands that stop or mute speech without cancelling Agent execution. */
+  stopWords: string[]
+  /** Whole-utterance commands that also cancel the device-owned Agent request. @default [停止执行] */
+  cancelWords: string[]
+  /** Speech for pure wake admission, without a model request. @default 我在，请说。 */
+  greeting: string
+  /** Conversation window renewed by accepted human input or response completion. @default 60000 */
+  dialogueTimeoutMs: number
+  /** Time in milliseconds to retain text echo guards after transmitted audio. @default 3000 */
+  echoGuardMs: number
+  /** WebSocket Ping interval in milliseconds; a missed Pong closes the connection. @default 20000 */
+  heartbeatMs: number
+  /** Deadline in milliseconds for voice handshake and failure-alert flushing. @default 10000 */
+  handshakeTimeoutMs: number
+  /** Deadline in milliseconds for an accepted request or synthesis. @default 180000 */
+  operationTimeoutMs: number
+  /** Maximum bytes in one inbound WebSocket frame. @default 65536 */
+  maxPayloadBytes: number
+  /** Maximum queued control bytes and outbound transport backlog. @default 262144 */
+  maxBufferedBytes: number
+  /** Maximum admitted transcription or spoken-answer string length. @default 12000 */
+  maxTextChars: number
+  /** Whether new accepted requests may replace an owned request or playback. @default true */
+  allowBargeIn: boolean
+}
+
+/** Validated deployment and device bindings for the Xiaozhi gateway. */
+export interface DeviceBinding {
+  /** Exact Device-Id header generated from the Linux client network.mac_address setting. */
+  deviceId: string
+  /** Raw device token checked against the Authorization Bearer header. */
+  token: string
+  /** Stable Harness session identity retained across device reconnects. */
+  sessionId: string
+  /** Host project directory used when creating or restoring the device session. */
+  cwd?: string
+  /** Agent preset for the device session; omission uses the profile composition. */
+  agentPreset?: string
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-experimental-xiaozhi -->
+
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-file-reference-local -->
 <a id="deepseek-aidsh-file-reference-local"></a>
 

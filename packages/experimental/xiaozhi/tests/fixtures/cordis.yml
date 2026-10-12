@@ -1,0 +1,20 @@
+- id: web
+  name: cordis:web
+  config: {host: 127.0.0.1, port: 0}
+- id: llm
+  name: cordis:llm
+- id: sessions
+  name: cordis:sessions
+- id: projections
+  name: cordis:projections
+- id: system
+  name: cordis:system
+- id: tools
+  name: cordis:tools
+- id: agents
+  name: cordis:agents
+- id: loop
+  name: cordis:loop
+  config: {agents: []}
+- id: fixture
+  name: cordis:fixture

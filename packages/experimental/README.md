@@ -54,6 +54,7 @@ Promotion requires a named product role, documented public behavior and limitati
 | [`translator`](translator/README.md) | Anonymous Google and Bing text translation | `ctx.translator` |
 | [`client-ui-cot-translation`](client-ui-cot-translation/README.md) | Expanded reasoning translation and original-text controls | `ctx.cotTranslation` |
 | [`cot-translation-bundle`](cot-translation-bundle/README.md) | Default-disabled reasoning translation composition | — |
+| [`xiaozhi`](xiaozhi/README.md) | Authenticated Linux voice wake-up and conversation gateway | — |
 | [`speech-to-text`](speech-to-text/README.md) | Named speech recognition providers | `ctx.speechToText` |
 | [`speech-to-text-sensevoice`](speech-to-text-sensevoice/README.md) | Managed local SenseVoice inference | — |
 | [`api-speech-to-text`](api-speech-to-text/README.md) | Authenticated transient transcription Remote | `ctx.speechController` |

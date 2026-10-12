@@ -1,0 +1,46 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/experimental/xiaozhi/README.md
+/:
+  en: ab4bd2f08056c55f
+  zh: 4addbf12551fe329
+/deepseek-ai-dsh-experimental-xiaozhi:
+  en: ee2f2c67850ae2a2
+  zh: 6a2152ca8e81b135
+/deepseek-ai-dsh-experimental-xiaozhi/summary:
+  en: bd38cec49595e02b
+  zh: c34c5e9a8b148ca7
+/deepseek-ai-dsh-experimental-xiaozhi/table-of-contents:
+  en: d152484eb41ac6b4
+  zh: 836ffb41ee595ffd
+/deepseek-ai-dsh-experimental-xiaozhi/use-this-package:
+  en: 119f602464b53be9
+  zh: 511f59355eb9be71
+/deepseek-ai-dsh-experimental-xiaozhi/understand-the-implementation:
+  en: 877b13996cb56202
+  zh: 028ee2a8af4eabeb
+/deepseek-ai-dsh-experimental-xiaozhi/further-exploration:
+  en: d1bca5b47056926d
+  zh: b5e9dd1ca345e072
+/deepseek-ai-dsh-experimental-xiaozhi/model-experience:
+  en: 215e7ba838619b7b
+  zh: a311da3843709f90
+/deepseek-ai-dsh-experimental-xiaozhi/model-experience/accepted-voice-input:
+  en: 4fe4a0ae45d7ebda
+  zh: 2555403cc9dbd899
+/deepseek-ai-dsh-experimental-xiaozhi/model-experience/accepted-voice-input/what-the-model-sees:
+  en: 11efc558745084ec
+  zh: b8696cf6780e945a
+/deepseek-ai-dsh-experimental-xiaozhi/model-experience/accepted-voice-input/token-effect:
+  en: e1cc729a98a0af0a
+  zh: bae0cef8f76d4139
+/deepseek-ai-dsh-experimental-xiaozhi/model-experience/accepted-voice-input/kv-cache-effect:
+  en: dc4adee00f62bdf8
+  zh: 434176791c345454
+/deepseek-ai-dsh-experimental-xiaozhi/known-limitations-and-deferred-work:
+  en: 4337a8536bb6e9e1
+  zh: 1dfb613c1eb8a334
+/deepseek-ai-dsh-experimental-xiaozhi/known-limitations-and-deferred-work/dev-note:
+  en: 0a1253c6f7b5e8b9
+  zh: 9f56528562c7c914
