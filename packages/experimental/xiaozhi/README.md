@@ -41,6 +41,8 @@ Mount alongside `webServer`, `sessionController`, `sessions`, and `agents`. The 
         cwd: "/home/user/project"
 ```
 
+For local deployment, configure `localService`: `cwd` is the absolute installed Python speech-project directory and `command` is its virtual-environment Python. `args` defaults to `["-m", "xiaozhi_voice.server", "--managed"]`; startup and shutdown deadlines default to 15000ms and 5000ms. Omit `voiceUrl` and `voiceToken` in this mode. The plugin generates an ephemeral token, uses a random loopback port, mounts the device route after readiness, and awaits worker exit on unload. Unexpected exit rejects new connections; check dependencies and reload the plugin. Python, libopus, and speech providers remain deployment prerequisites; Edge TTS also requires ffmpeg. Managed mode does not install dependencies.
+
 The package must be resolvable from the profile. For a source checkout, the parent MinuSense configuration generator writes a file-URL plugin row. Its name points at the built entry instead of an unpublished npm package.
 
 The client URL ends in `/xiaozhi/v1` without a trailing slash. Set its `websocket.token` to the device token and `websocket.version` to 3. Bind `deviceId` to `network.mac_address` in the client settings. Protocol versions 1, 2, and 3 are supported with mono 16kHz Opus and 60ms frames.
@@ -49,7 +51,8 @@ Enable `XIAOZHI_SKIP_ACTIVATION=1`, `XIAOZHI_AUTO_LISTEN=1`, and `XIAOZHI_BARGE_
 
 | Field | Default | Behavior |
 |---|---|---|
-| `voiceUrl`, `voiceToken`, `devices` | Required | Speech-service endpoint, shared service token, and fixed device/session bindings |
+| `voiceUrl`, `voiceToken`, `devices` | required externally | Speech service URL, shared token, device bindings; managed mode requires only device bindings |
+| `localService` | disabled | Optional owned speech worker; replaces external service URL and token |
 | `path` | `/xiaozhi/v1` | Exact WebSocket upgrade path |
 | `wakeWords` | `[小智小智]` | Wake prefixes; remaining words become the prompt |
 | `stopWords`, `cancelWords` | `[停止, 停一下, 别说了]`, `[停止执行]` | Stop speech only, or also cancel the accepted Agent turn |

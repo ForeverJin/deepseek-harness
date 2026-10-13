@@ -41,6 +41,8 @@ kind: "package-reference"
         cwd: "/home/user/project"
 ```
 
+本机部署可配置 `localService`：`cwd` 指向已安装依赖的 Python 语音工程绝对路径，`command` 指向该工程 `.venv` 的 Python；`args` 默认 `["-m", "xiaozhi_voice.server", "--managed"]`，启动期限默认 15000ms，退出宽限默认 5000ms。此模式不填写 `voiceUrl` 或 `voiceToken`，插件生成临时 token 并使用随机回环端口。服务就绪后才注册设备路由，卸载时等待服务退出；意外退出后拒绝新连接，需要检查依赖并重载插件。Python、libopus 和语音供应商仍需配置，Edge TTS 还需要 ffmpeg；托管模式不自动安装依赖。
+
 包必须能由 profile 解析。源码工程可使用父级 MinuSense 的配置生成器写出 file-URL 插件条目；该条目指向构建入口，无需依赖尚未发布的 npm 包。
 
 客户端 URL 以 `/xiaozhi/v1` 结束，不带末尾斜杠。`websocket.token` 使用设备 token，`websocket.version` 设为 3。`deviceId` 对应客户端设置中的 `network.mac_address`。支持协议版本 1、2、3，音频限定为单声道 16kHz Opus、60ms 帧。
@@ -49,7 +51,8 @@ Linux 客户端开启 `XIAOZHI_SKIP_ACTIVATION=1`、`XIAOZHI_AUTO_LISTEN=1`、`X
 
 | 字段 | 默认值 | 行为 |
 |---|---|---|
-| `voiceUrl`、`voiceToken`、`devices` | 必填 | 语音服务地址、共享服务 token、固定设备与会话绑定 |
+| `voiceUrl`、`voiceToken`、`devices` | 外部模式必填 | 语音服务地址、共享 token、设备与会话绑定；托管模式仅需设备绑定 |
+| `localService` | 不启用 | 可选托管进程配置；启用时替代外部服务地址和 token |
 | `path` | `/xiaozhi/v1` | WebSocket upgrade 的精确路径 |
 | `wakeWords` | `[小智小智]` | 唤醒前缀；剩余文字作为请求 |
 | `stopWords`、`cancelWords` | `[停止, 停一下, 别说了]`、`[停止执行]` | 仅停止播报，或同时取消已接受的 Agent 轮次 |

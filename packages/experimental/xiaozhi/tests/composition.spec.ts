@@ -2,6 +2,7 @@
 import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { once } from 'node:events'
 import type { IncomingMessage } from 'node:http'
 import { Context } from '@deepseek-ai/cordis'
@@ -24,7 +25,7 @@ import { MockAdapter, textResponse } from '../../../core/agent-loop/tests/mock-a
 import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 
 const hello = { type: 'hello', version: 3, transport: 'websocket', audio_params: { format: 'opus', sample_rate: 16000, channels: 1, frame_duration: 60 } }
-async function fixture(script: ConstructorParameters<typeof MockAdapter>[0]) {
+async function fixture(script: ConstructorParameters<typeof MockAdapter>[0], local = false) {
   const directory = mkdtempSync(join(tmpdir(), 'dsh-xiaozhi-'))
   const voice = new WebSocketServer({ host: '127.0.0.1', port: 0 })
   await once(voice, 'listening')
@@ -65,6 +66,12 @@ async function fixture(script: ConstructorParameters<typeof MockAdapter>[0]) {
     voiceUrl: `ws://127.0.0.1:${address.port}/voice`, voiceToken: 'voice-secret', dialogueTimeoutMs: 1000,
     devices: [{ deviceId: 'linux-mic', token: 'device-secret', sessionId: 'voice-device', cwd: directory }],
   } })
+  if (local) {
+    const row = rows.at(-1)!
+    row.config = { devices: [{ deviceId: 'linux-mic', token: 'device-secret', sessionId: 'voice-device', cwd: directory }],
+      localService: { cwd: fileURLToPath(new URL('./fixtures/', import.meta.url)),
+        command: process.execPath, args: ['local-voice.mjs'], startupTimeoutMs: 3000, shutdownTimeoutMs: 1000 } }
+  }
   const configFile = join(directory, 'cordis.yml')
   writeFileSync(configFile, yaml.dump(rows))
   await ctx.plugin(Loader)
@@ -278,4 +285,18 @@ it('cancels an owned claim during pre-step admission before invoking the model',
     expect(app.adapter.requests).toHaveLength(0)
     expect(app.syntheses).toHaveLength(0)
   } finally { await app.close() }
+})
+
+it('loads an owned speech worker through Loader and releases its endpoint on unload', async () => {
+  const app = await fixture([textResponse('本地服务回答')], true)
+  try {
+    const client = await app.connect()
+    client.send({ type: 'listen', state: 'detect', text: '小智小智，查看目录' })
+    await client.stopped()
+    expect(app.adapter.requests).toHaveLength(1)
+    expect(client.controls.filter(message => message.type === 'tts' && message.state === 'sentence_start').map(message => message.text))
+      .toEqual(['本地服务回答'])
+  } finally { await app.close() }
+  const probe = new WebSocket(app.url)
+  await expect(once(probe, 'open')).rejects.toThrow()
 })

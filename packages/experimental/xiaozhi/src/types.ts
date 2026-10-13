@@ -16,6 +16,19 @@ export interface DeviceBinding {
   /** Agent preset for the device session; omission uses the profile composition. */
   agentPreset?: string
 }
+/** Owned local speech process; arguments are passed directly without a shell. */
+export interface LocalVoiceConfig {
+  /** Absolute directory containing the installed Python speech project. */
+  cwd: string
+  /** Executable path; prefer the project's virtual-environment Python. @default python */
+  command: string
+  /** Executable arguments for the managed readiness protocol. @default [-m, xiaozhi_voice.server, --managed] */
+  args: string[]
+  /** Maximum wait for the worker's loopback readiness message. @default 15000 */
+  startupTimeoutMs: number
+  /** Grace period before forcibly killing the owned process. @default 5000 */
+  shutdownTimeoutMs: number
+}
 /** Resolved gateway configuration supplied by the Cordis configuration schema. */
 export interface GatewayConfig {
   /** Exact WebSocket upgrade pathname without a trailing slash. @default /xiaozhi/v1 */
@@ -24,6 +37,8 @@ export interface GatewayConfig {
   voiceUrl: string
   /** Shared token sent to the speech service in an Authorization Bearer header. */
   voiceToken: string
+  /** Start and stop a local speech worker instead of connecting to an external voiceUrl. */
+  localService?: LocalVoiceConfig
   /** Explicit device bindings; device identities and session identities must each be unique. */
   devices: DeviceBinding[]
   /** Accepted wake prefixes, matched longest first. @default [小智小智] */
