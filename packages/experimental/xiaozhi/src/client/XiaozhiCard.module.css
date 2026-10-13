@@ -5,6 +5,7 @@
 .field label { font-size: 13px; color: var(--dsw-alias-label-primary); }
 .field select { min-height: 32px; border: 0.5px solid var(--dsw-alias-border-l4); border-radius: var(--dsw-radius-md); background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-primary); padding: 0 8px; font: inherit; }
 .input { min-height: 32px; border: 0.5px solid var(--dsw-alias-border-l4); border-radius: var(--dsw-radius-md); background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-primary); padding: 0 8px; font: inherit; }
+.textarea { min-height: 160px; resize: vertical; border: 0.5px solid var(--dsw-alias-border-l4); border-radius: var(--dsw-radius-md); background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-primary); padding: 8px; font: inherit; line-height: 20px; }
 .toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .hint { font-size: 12px; line-height: 18px; color: var(--dsw-alias-label-secondary); }
 .notice { margin: 0; font-size: 13px; line-height: 20px; color: var(--dsw-alias-label-secondary); }

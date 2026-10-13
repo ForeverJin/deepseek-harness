@@ -9,6 +9,7 @@ import type {} from '@deepseek-ai/dsh-settings'
 import { WebSocketServer } from 'ws'
 import { DeviceConnection } from './connection.ts'
 import { startLocalVoice } from './local-voice.ts'
+import { DEFAULT_PERSONA, registerPersona } from './persona.ts'
 import { normalize } from './wakeup.ts'
 import type { GatewayConfig } from './types.ts'
 export type { GatewayConfig, DeviceBinding } from './types.ts'
@@ -40,7 +41,10 @@ export const Config = z.object({
   wakeWords: z.array(z.string()).default(['小智小智']),
   stopWords: z.array(z.string()).default(['停止', '停一下', '别说了']),
   cancelWords: z.array(z.string()).default(['停止执行']),
-  greeting: z.string().default('我在，请说。'),
+  // One syllable of acknowledgement: the user hears the wake landed without a
+  // full greeting sentence stalling the next utterance (with client barge-in
+  // the microphone stays open even while it plays).
+  greeting: z.string().default('嗯'),
   dialogueTimeoutMs: z.number().default(60000),
   echoGuardMs: z.number().default(5000),
   heartbeatMs: z.number().default(20000),
@@ -62,6 +66,7 @@ export const Config = z.object({
   minimaxApiKey: z.string().role('secret').pattern(overrideToken).default('').volatile(),
   minimaxBaseUrl: z.string().pattern(httpUrl).default('').volatile(),
   minimaxGroupId: z.string().pattern(overrideToken).default('').volatile(),
+  persona: z.string().default(DEFAULT_PERSONA).volatile(),
 })
 
 function equalToken(actual: string, expected: string): boolean {
@@ -80,6 +85,10 @@ export async function apply(ctx: Context, config: GatewayConfig): Promise<void> 
   // `xiaozhi-voice` namespace, so the settings service must not offer an
   // auto-generated one beside it.
   ctx.inject(['settings'], (child) => { child.effect(() => child.settings.configure({ auto: false }, ctx.fiber)) })
+  // The voice persona: one prompt variable plus the `xiaozhi` agent preset.
+  // Optional injection keeps plain gateways serving devices bound to other
+  // presets in deployments without the prompt or preset services.
+  ctx.inject(['systemPrompt', 'agentPresets'], (child) => { registerPersona(child, config) })
   if (!/^\/(?:[a-zA-Z0-9_-]+\/)*[a-zA-Z0-9_-]+$/.test(config.path)) throw new Error('xiaozhi: invalid route path')
   if (config.localService === undefined) {
     const url = new URL(config.voiceUrl)

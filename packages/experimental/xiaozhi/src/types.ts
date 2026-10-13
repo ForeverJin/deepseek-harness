@@ -48,11 +48,16 @@ export interface GatewayConfig {
   stopWords: string[]
   /** Whole-utterance commands that also cancel the device-owned Agent request. @default [停止执行] */
   cancelWords: string[]
-  /** Speech for pure wake admission, without a model request. @default 我在，请说。 */
+  /**
+   * Speech for pure wake admission, without a model request. One short
+   * syllable acknowledges the wake; a full sentence stalls the next
+   * utterance on half-duplex clients (microphone closes during playback).
+   * @default 嗯
+   */
   greeting: string
   /** Conversation window renewed by accepted human input or response completion. @default 60000 */
   dialogueTimeoutMs: number
-  /** Time in milliseconds to retain text echo guards after transmitted audio. @default 3000 */
+  /** Time in milliseconds to retain text echo guards after transmitted audio. @default 5000 */
   echoGuardMs: number
   /** WebSocket Ping interval in milliseconds; a missed Pong closes the connection. @default 20000 */
   heartbeatMs: number
@@ -92,6 +97,11 @@ export interface GatewayConfig {
   minimaxBaseUrl: Volatile<string>
   /** MiniMax GroupId override for legacy JWT keys; empty keeps the service environment. */
   minimaxGroupId: Volatile<string>
+  /**
+   * Role description interpolated into the voice preset's persona on every
+   * prompt assembly; blank falls back to the built-in default persona.
+   */
+  persona: Volatile<string>
 }
 /** Wire payload of one `configure` control; absent fields inherit the service environment. */
 export interface VoiceSettings {

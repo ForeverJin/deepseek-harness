@@ -15,9 +15,15 @@ interface VoiceRequest {
   id: SessionRequestId
   turn?: number
   answer: string
+  answered: boolean
   muted?: boolean
   admitting: boolean
   control: AbortController
+}
+
+/** Split speakable prose into TTS-sized sentences (official FIRST/MIDDLE/LAST pacing). */
+function splitSentences(text: string): string[] {
+  return text.split(/(?<=[。！？!?；;\n])/).map(part => part.trim()).filter(part => part.length > 0)
 }
 function bytes(data: RawData): Buffer {
   return Array.isArray(data) ? Buffer.concat(data) : Buffer.isBuffer(data) ? data : Buffer.from(data)
@@ -50,6 +56,8 @@ export class DeviceConnection {
   private openingTurn: number | undefined
   private request: VoiceRequest | undefined
   private speech: { id: SynthesisId; text: string } | undefined
+  /** Pending sentences of the owned request, spoken one synthesize at a time. */
+  private speechQueue: string[] = []
   private deadline: NodeJS.Timeout | undefined
   private voiceSettingsSynced = false
   private lastVoiceSettings: string | undefined
@@ -233,6 +241,12 @@ export class DeviceConnection {
         } else {
           this.sendClient({ type: 'tts', state: 'stop' })
           this.speech = undefined
+          // More sentences of the same answer follow immediately; only the
+          // last one closes the dialogue window and the deadline.
+          if (this.speechQueue.length > 0) {
+            this.speakNext()
+            return
+          }
           this.clearDeadline()
           this.gate.resume(Date.now())
           this.setPhase('idle')
@@ -242,6 +256,11 @@ export class DeviceConnection {
         // Acoustic hit from the speech service's local spotter; transcript
         // matching remains the fallback path for missed detections.
         if (!this.ready || this.version === undefined) return
+        // During playback the microphone stays open (client barge-in), so an
+        // acoustic hit is almost surely loudspeaker echo of our own speech;
+        // interruptions belong to the transcript path, exactly like the
+        // official backend where only device-side detection exists.
+        if (this.speech !== undefined || this.speechQueue.length > 0) return
         const busy = this.request !== undefined || this.speech !== undefined
         if (busy && !this.config.allowBargeIn) return
         this.stop(true)
@@ -266,7 +285,7 @@ export class DeviceConnection {
       return
     }
     const control = new AbortController()
-    const operation: VoiceRequest = { id: brandString<SessionRequestId>(randomUUID()), answer: '', admitting: true, control }
+    const operation: VoiceRequest = { id: brandString<SessionRequestId>(randomUUID()), answer: '', answered: false, admitting: true, control }
     this.request = operation
     this.setPhase('thinking')
     this.armDeadline()
@@ -325,25 +344,53 @@ export class DeviceConnection {
     }
     if (request.control.signal.aborted) return
     if (event.type === 'assistant/message' && event.data.turn === request.turn && event.data.interrupted !== true) {
-      // Text emitted before tool calls in the same message is the agent narrating its next
-      // step (interleaved thinking), not a reply to the user; only trailing prose is spoken.
       const content = event.data.message.content
       const firstTool = content.findIndex(block => block.type === 'tool-call')
       const prose = (firstTool === -1 ? content : content.slice(0, firstTool))
         .filter(block => block.type === 'text').map(block => block.text).join('\n')
       if (prose.trim()) request.answer = prose
+      // A pure-text message is the spoken reply: queue its sentences now so
+      // synthesis starts while later turns of the same answer are still being
+      // generated. Text preceding tool calls in a message is the agent
+      // narrating its next step, not a reply, and stays unspoken.
+      if (firstTool === -1 && request.muted !== true) this.enqueueAnswer(speechText(prose))
     }
     if (event.type === 'turn/end' && event.data.turn === request.turn) {
       this.request = undefined
-      this.clearDeadline()
       if (event.data.reason.kind === 'completed') this.gate.resume(Date.now())
       if (event.data.reason.kind === 'completed' && request.muted !== true) {
         const answer = speechText(request.answer)
         if (answer.length > this.config.maxTextChars) { this.fail(new Error('Answer exceeds speech limit')); return }
-        if (answer) this.speak(answer)
-        else { this.sendClient({ type: 'tts', state: 'stop' }); this.gate.resume(Date.now()); this.setPhase('idle') }
-      } else if (event.data.reason.kind !== 'aborted' && event.data.reason.kind !== 'completed') this.fail(new Error('Harness turn did not complete'))
+        // Streaming already queued the reply; speak() here only covers event
+        // shapes that produced no enqueueable message.
+        if (!request.answered) this.enqueueAnswer(answer)
+        else if (!answer && this.speech === undefined && this.speechQueue.length === 0) {
+          this.clearDeadline()
+          this.sendClient({ type: 'tts', state: 'stop' })
+          this.gate.resume(Date.now())
+          this.setPhase('idle')
+        }
+      } else if (event.data.reason.kind === 'aborted') {
+        // A cancelled answer stops mid-sentence at most; never start new ones.
+        this.speechQueue = []
+      } else if (event.data.reason.kind !== 'completed') this.fail(new Error('Harness turn did not complete'))
     }
+  }
+
+  /** Queue reply sentences for sequential synthesis; start speaking when idle. */
+  private enqueueAnswer(text: string): void {
+    const sentences = splitSentences(text)
+    if (sentences.length === 0) return
+    const request = this.request
+    if (request !== undefined) request.answered = true
+    this.speechQueue.push(...sentences)
+    if (this.speech === undefined) this.speakNext()
+  }
+
+  /** Speak the next queued sentence; the tts stop of one advances to the next. */
+  private speakNext(): void {
+    const sentence = this.speechQueue.shift()
+    if (sentence !== undefined) this.speak(sentence)
   }
 
   private speak(text: string): void {
@@ -380,6 +427,7 @@ export class DeviceConnection {
   }
   private stop(cancelAgent: boolean): void {
     const request = this.request
+    this.speechQueue = []
     if (cancelAgent) {
       if (request?.admitting !== true) this.request = undefined
       request?.control.abort()

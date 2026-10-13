@@ -118,7 +118,7 @@ it('gates wake, records real prompts and committed replies, and requires wake af
     const phases: string[] = []
     // The event declaration lives in src/connection.ts; the aggregate test program does not
     // see that interface merge, so assert the name and keep the payload typed here.
-    app.ctx.on('xiaozhi/voice-phase' as never, (_session: SessionId, phase: string) => phases.push(phase))
+    app.ctx.on('xiaozhi/voice-phase' as never, ((_session: SessionId, phase: string) => phases.push(phase)) as never)
     // Non-empty overrides reach the speech service as one configure right after the gateway hello.
     await expect.poll(() => app.configures.length).toBeGreaterThanOrEqual(1)
     expect(app.configures[0]).toEqual({
@@ -131,7 +131,7 @@ it('gates wake, records real prompts and committed replies, and requires wake af
     client.send({ type: 'listen', state: 'detect', text: '小智小智' })
     await client.stopped()
     expect(app.adapter.requests).toHaveLength(0)
-    expect(app.syntheses[0]?.text).toBe('我在，请说。')
+    expect(app.syntheses[0]?.text).toBe('嗯')
     client.send({ type: 'listen', state: 'detect', text: '查看目录' })
     await client.stopped(2)
     expect(app.adapter.requests).toHaveLength(1)

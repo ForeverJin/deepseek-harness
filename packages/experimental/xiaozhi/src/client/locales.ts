@@ -7,7 +7,10 @@ export const NS = 'settings.xiaozhi'
 /** English copy and key source. */
 export const en = {
   title: 'Xiaozhi Voice',
-  summary: 'Configure the ASR and TTS backends the speech service uses for Xiaozhi devices.',
+  summary: 'Set the role description and the ASR and TTS backends the speech service uses for Xiaozhi devices.',
+  personaSection: 'Role description',
+  persona: 'Persona spoken to the voice session',
+  personaHint: 'Takes effect from the next utterance without restarting or recreating the session; clearing it restores the built-in default.',
   asrSection: 'Speech recognition (ASR)',
   ttsSection: 'Speech synthesis (TTS)',
   minimaxSection: 'MiniMax connection',
@@ -47,7 +50,10 @@ export type XiaozhiLocaleKey = keyof typeof en
 /** Chinese copy. */
 export const zh: Record<XiaozhiLocaleKey, string> = {
   title: '小智语音',
-  summary: '设置语音服务为小智设备使用的识别（ASR）与合成（TTS）后端。',
+  summary: '设置语音会话的角色描述，以及语音服务为小智设备使用的识别（ASR）与合成（TTS）后端。',
+  personaSection: '角色描述',
+  persona: '语音会话的人设',
+  personaHint: '保存后从下一句话开始生效，无需重启或删除会话；清空恢复内置默认人设。',
   asrSection: '语音识别（ASR）',
   ttsSection: '语音合成（TTS）',
   minimaxSection: 'MiniMax 连接',

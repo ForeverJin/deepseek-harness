@@ -2,12 +2,13 @@
 
 import {
   SettingsFormModel, settingsTextField,
-  type SettingsFieldState, type SettingsFormActions, type SettingsFormScope, type SettingsFormShell,
+  type SettingsFieldSpec, type SettingsFieldState, type SettingsFormActions, type SettingsFormScope, type SettingsFormShell,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
 
-/** The speech-backend fields this card edits; every field absent or empty inherits the service environment. */
+/** The fields this card edits; every backend field absent or empty inherits the service environment. */
 export interface XiaozhiSettings {
+  persona?: string
   asrProvider?: string
   funasrUrl?: string
   minimaxAsrModel?: string
@@ -23,6 +24,7 @@ export interface XiaozhiSettings {
 
 /** Effective values and drafts presented by the card. */
 export interface XiaozhiCardState extends SettingsFormShell {
+  persona: SettingsFieldState
   asrProvider: SettingsFieldState
   funasrUrl: SettingsFieldState
   minimaxAsrModel: SettingsFieldState
@@ -45,7 +47,24 @@ export interface XiaozhiCardFace extends SettingsFormActions {
   clearKey: () => void
 }
 
-/** Stages speech-backend overrides until the reader saves them. */
+/**
+ * A multi-line text field that keeps inner newlines; a whitespace-only draft
+ * clears the override so the built-in default persona applies again.
+ * @param field - field name inside the namespace section.
+ * @returns the field's conversion spec.
+ */
+function settingsMultilineField(field: string): SettingsFieldSpec {
+  return {
+    field,
+    format: value => typeof value === 'string' ? value : '',
+    parse: (text) => {
+      const trimmed = text.trim()
+      return trimmed === '' ? { kind: 'clear' } : { kind: 'set', value: text }
+    },
+  }
+}
+
+/** Stages the persona and speech-backend overrides until the reader saves them. */
 export class XiaozhiCardController {
   private readonly form: SettingsFormModel<XiaozhiSettings>
   private readonly store: SnapshotStore<XiaozhiCardState>
@@ -55,12 +74,14 @@ export class XiaozhiCardController {
    */
   constructor(private readonly scope: SettingsFormScope<XiaozhiSettings>) {
     this.form = new SettingsFormModel(scope, [
-      'asrProvider', 'funasrUrl', 'minimaxAsrModel', 'minimaxAsrLanguage',
-      'ttsProvider', 'edgeVoice', 'minimaxTtsModel', 'minimaxTtsVoice',
-      'minimaxApiKey', 'minimaxBaseUrl', 'minimaxGroupId',
-    ].map(field => settingsTextField(field)))
+      settingsMultilineField('persona'),
+      ...['asrProvider', 'funasrUrl', 'minimaxAsrModel', 'minimaxAsrLanguage',
+        'ttsProvider', 'edgeVoice', 'minimaxTtsModel', 'minimaxTtsVoice',
+        'minimaxApiKey', 'minimaxBaseUrl', 'minimaxGroupId',
+      ].map(field => settingsTextField(field))])
     this.store = this.form.bind(() => ({
       ...this.form.shell(),
+      persona: this.form.field('persona'),
       asrProvider: this.form.field('asrProvider'),
       funasrUrl: this.form.field('funasrUrl'),
       minimaxAsrModel: this.form.field('minimaxAsrModel'),

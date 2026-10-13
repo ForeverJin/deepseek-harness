@@ -9,6 +9,7 @@
     "src/index.ts",
     "src/connection.ts",
     "src/local-voice.ts",
+    "src/persona.ts",
     "src/protocol.ts",
     "src/types.ts",
     "src/wakeup.ts"
@@ -34,6 +35,9 @@
     },
     {
       "path": "../../core/agent"
+    },
+    {
+      "path": "../../preset/agent-preset-registry"
     },
     {
       "path": "../../settings/settings"

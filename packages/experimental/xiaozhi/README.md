@@ -64,6 +64,7 @@ Enable `XIAOZHI_SKIP_ACTIVATION=1`, `XIAOZHI_AUTO_LISTEN=1`, and `XIAOZHI_BARGE_
 | `asrProvider`, `funasrUrl`, `minimaxAsrModel`, `minimaxAsrLanguage` | empty | ASR backend overrides; empty inherits the speech-service environment |
 | `ttsProvider`, `edgeVoice`, `minimaxTtsModel`, `minimaxTtsVoice` | empty | TTS backend overrides; empty inherits the speech-service environment |
 | `minimaxApiKey`, `minimaxBaseUrl`, `minimaxGroupId` | empty | MiniMax connection overrides; the key is write-only |
+| `persona` | built-in Xiaozhi persona | Role description for voice sessions (multiline); injected through the `xiaozhi` preset and re-read on every prompt assembly |
 
 Waiting speech is ignored unless it starts with a wake prefix. Pure wake synthesizes the greeting. Accepted speech renews the dialogue window; a finished answer reopens it. Heartbeats and raw audio do not renew it. Reconnect restores the configured session but starts asleep and never replays historical speech.
 
@@ -72,6 +73,12 @@ Transport failures close the voice connection and report a retry message. Playba
 ### Speech-backend settings page
 
 The backend-override fields above are `volatile`: the package's Plugins-page detail view embeds the settings form (registered into the `plugins.bundle.config` slot, keyed by package name; the browser half loads automatically through the package's `dsh.client` declaration, and the settings namespace is the Loader entry id, e.g. `xiaozhi-voice`). Saving writes the profile `cordis.patch.yml` and applies live: at connection open, each listen, and each synthesis the gateway compares its live configuration and sends a `configure` control to the speech service when it changed — the next utterance or synthesis uses the new backends without a service restart. The key field is write-only (stored via `role('secret')` redaction); clearing it uses the form's dedicated button. `configure` payloads carry secrets only over the `VOICE_TOKEN`-authenticated link and are never logged.
+
+### Role description and the `xiaozhi` preset
+
+At startup the gateway registers the `xiaozhi` agent preset with the preset registry: one `dsh-persona` row (`complete: true`, runtime context suppressed) over the persistent shell group the minimal preset ships. When a device binding selects that preset, the session's persona is the built-in speech rules plus the role description — the rules (short spoken replies, no Markdown, ASR homophone tolerance) are plugin constants, while the role description (the `persona` field, defaulting to the Xiaozhi persona) is edited in the settings page's role-description section.
+
+The role-description field is `volatile`: the plugin exposes it as the global prompt variable `xiaozhi_persona`, the preset's persona prefix references that variable, and every prompt assembly re-evaluates it. Saving therefore **takes effect from the next utterance without restarting Harness or recreating the voice session**; clearing it restores the built-in default. This differs from `agentPreset` and the default model, which are pinned at session creation and require removing the old session after changes. Without the prompt or preset services the gateway still routes voice; only the `xiaozhi` preset is unavailable (devices bound to it fail at session creation).
 
 -----
 

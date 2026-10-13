@@ -64,6 +64,7 @@ Linux 客户端开启 `XIAOZHI_SKIP_ACTIVATION=1`、`XIAOZHI_AUTO_LISTEN=1`、`X
 | `asrProvider`、`funasrUrl`、`minimaxAsrModel`、`minimaxAsrLanguage` | 空 | 识别后端覆盖；空值沿用语音服务环境变量 |
 | `ttsProvider`、`edgeVoice`、`minimaxTtsModel`、`minimaxTtsVoice` | 空 | 合成后端覆盖；空值沿用语音服务环境变量 |
 | `minimaxApiKey`、`minimaxBaseUrl`、`minimaxGroupId` | 空 | MiniMax 连接覆盖；密钥只写不读 |
+| `persona` | 内置「小智」人设 | 语音会话的角色描述（多行）；经 `xiaozhi` 预设注入 system prompt，每次组装重读 |
 
 待机语音仅在以唤醒前缀开头时被接受。纯唤醒合成问候语。有效用户输入续期对话窗口，回答结束后重新开放窗口；心跳与原始音频不续期。重连恢复配置的会话，但从待唤醒状态开始，不重播历史语音。
 
@@ -72,6 +73,12 @@ Linux 客户端开启 `XIAOZHI_SKIP_ACTIVATION=1`、`XIAOZHI_AUTO_LISTEN=1`、`X
 ### 语音后端设置页
 
 上表的后端覆盖字段带 `volatile` 标记：WebUI「插件」页「小智语音」包详情页内嵌设置表单（表单注册进 `plugins.bundle.config` slot、按包名 keyed；浏览器半边经包声明 `dsh.client` 自动加载，设置 namespace 为 Loader 条目 id，如 `xiaozhi-voice`）。表单保存写入 profile 的 `cordis.patch.yml` 并热生效；网关在连接建立、每次收音和每次合成前对比配置快照，变化时向语音服务发送 `configure` 控制消息——下一次收音或合成即使用新后端，无需重启语音服务。密钥字段只写不读（写入经 `role('secret')` 脱敏），清除需用表单中的「清除已保存的密钥」按钮。`configure` 载荷包含密钥，仅经 `VOICE_TOKEN` 鉴权的链路传输，不会出现在日志中。
+
+### 角色描述与 `xiaozhi` 预设
+
+网关在启动时向预设注册表注册 `xiaozhi` Agent 预设：一个 `dsh-persona` 行（`complete: true`，抑制运行时上下文）加 minimal 同款持久 shell 组。设备行的 `agentPreset` 指向该预设时，语音会话的人设由「内建语音规则 + 角色描述」构成——语音规则（口语化短回答、禁 Markdown、容忍 ASR 同音错字等）是插件常量，角色描述（`persona` 配置，默认「小智」人设）可在设置页「角色描述」分区编辑。
+
+角色描述字段带 `volatile` 标记：插件把它注册为全局 prompt 变量 `xiaozhi_persona`，预设的 persona 前缀引用该变量，每次提示词组装重新求值。因此**保存后从下一句话开始生效，无需重启 Harness 或删除语音会话**；清空则恢复内置默认人设。这与 `agentPreset`、默认模型的语义不同——后两者在会话创建时锁定，修改后必须删除旧会话并重启。提示词与预设服务缺失时网关照常路由语音，只是 `xiaozhi` 预设不可用（绑定该预设的设备创建会话会报错）。
 
 -----
 

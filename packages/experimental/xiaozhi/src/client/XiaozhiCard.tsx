@@ -20,6 +20,7 @@ export type XiaozhiCardProps = PropsRuntime<'plugins.bundle.config'>
 export function XiaozhiCard(props: XiaozhiCardProps) {
   const { t } = props
   const state = props.useXiaozhiCard(snapshot => snapshot)
+  const personaId = useId()
   const asrId = useId(), ttsId = useId(), keyId = useId(), urlId = useId(), groupId = useId()
   const asrVoiceId = useId(), asrLangId = useId(), edgeId = useId(), ttsVoiceId = useId(), ttsModelId = useId()
   if (props.view === 'summary') return t('summary')
@@ -37,6 +38,26 @@ export function XiaozhiCard(props: XiaozhiCardProps) {
     <SettingsForm labels={formLabels(t)}
       state={state} onSave={props.save} onDiscard={props.discard}>
       <p className={css.notice}>{t('inheritNotice')}</p>
+      <section className={css.section} aria-labelledby={`${personaId}-heading`}>
+        <h3 className={css.heading} id={`${personaId}-heading`}>{t('personaSection')}</h3>
+        <div className={css.field}>
+          <label htmlFor={`${personaId}-text`}>{t('persona')}</label>
+          <textarea id={`${personaId}-text`} className={css.textarea} rows={10} spellCheck={false}
+            value={state.persona.text} disabled={disabled}
+            aria-invalid={state.persona.invalid || undefined}
+            onChange={(event) => { props.edit('persona', event.target.value) }} />
+          <div className={css.toolbar}>
+            {state.persona.overridden
+              ? (
+                <Button size="sm" variant="outline" disabled={disabled}
+                  onClick={() => { props.resetField('persona') }}>{t('reset')}</Button>
+              )
+              : null}
+            <span className={css.hint}>{t('personaHint')}</span>
+          </div>
+          {state.persona.invalid ? <span className={css.hint}>{t('invalidValue')}</span> : null}
+        </div>
+      </section>
       <section className={css.section} aria-labelledby={`${asrId}-heading`}>
         <h3 className={css.heading} id={`${asrId}-heading`}>{t('asrSection')}</h3>
         <div className={css.field}>
