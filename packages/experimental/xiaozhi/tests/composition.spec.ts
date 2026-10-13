@@ -32,6 +32,7 @@ async function fixture(script: ConstructorParameters<typeof MockAdapter>[0], loc
   const address = voice.address()
   if (typeof address !== 'object' || address === null) throw new Error('Missing voice test port')
   const syntheses: { id: string; text: string; socket: WebSocket }[] = [], cancellations: string[] = [], uplink: Buffer[] = []
+  const configures: Record<string, unknown>[] = []
   voice.on('connection', (socket, request) => {
     expect(request.headers.authorization).toBe('Bearer voice-secret')
     let epoch = 0
@@ -43,6 +44,7 @@ async function fixture(script: ConstructorParameters<typeof MockAdapter>[0], loc
         return
       }
       const message = JSON.parse(frame.toString('utf8')) as Record<string, unknown>
+      if (message.type === 'configure') configures.push(message)
       if (message.type === 'hello') socket.send(JSON.stringify({ type: 'ready' }))
       if (message.type === 'listen' && message.state === 'start' && typeof message.epoch === 'number') epoch = message.epoch
       if (message.type === 'cancel' && typeof message.id === 'string') cancellations.push(message.id)
@@ -65,6 +67,7 @@ async function fixture(script: ConstructorParameters<typeof MockAdapter>[0], loc
   rows.push({ id: 'voice', name: 'cordis:xiaozhi', config: {
     voiceUrl: `ws://127.0.0.1:${address.port}/voice`, voiceToken: 'voice-secret', dialogueTimeoutMs: 1000,
     devices: [{ deviceId: 'linux-mic', token: 'device-secret', sessionId: 'voice-device', cwd: directory }],
+    asrProvider: 'minimax', minimaxTtsVoice: 'male-qn-qingse',
   } })
   if (local) {
     const row = rows.at(-1)!
@@ -96,18 +99,26 @@ async function fixture(script: ConstructorParameters<typeof MockAdapter>[0], loc
     return { socket, controls, audio, send(value: object) { socket.send(JSON.stringify(value)) },
       async stopped(count = 1) { await expect.poll(() => controls.filter(message => message.type === 'tts' && message.state === 'stop').length).toBeGreaterThanOrEqual(count) } }
   }
-  return { ctx, adapter, syntheses, cancellations, uplink, url, connect, voiceConnections: () => voice.clients.size, async close() {
-    await ctx.fiber.dispose()
-    for (const socket of voice.clients) socket.terminate()
-    await new Promise<void>((resolve) => { voice.close(() => { resolve() }) })
-    rmSync(directory, { recursive: true, force: true })
-  } }
+  return {
+    ctx, adapter, syntheses, cancellations, uplink, configures, url, connect, voiceConnections: () => voice.clients.size,
+    async close() {
+      await ctx.fiber.dispose()
+      for (const socket of voice.clients) socket.terminate()
+      await new Promise<void>((resolve) => { voice.close(() => { resolve() }) })
+      rmSync(directory, { recursive: true, force: true })
+    },
+  }
 }
 
 it('gates wake, records real prompts and committed replies, and requires wake after reconnect', async () => {
   const app = await fixture([textResponse('第一回答'), textResponse('第二回答')])
   try {
     const client = await app.connect()
+    // Non-empty overrides reach the speech service as one configure right after the gateway hello.
+    await expect.poll(() => app.configures.length).toBeGreaterThanOrEqual(1)
+    expect(app.configures[0]).toEqual({
+      type: 'configure', minimax: {}, asr: { provider: 'minimax' }, tts: { minimax_voice: 'male-qn-qingse' },
+    })
     client.send({ type: 'listen', state: 'detect', text: '背景谈话' })
     client.send({ type: 'listen', state: 'detect', text: '小智小智' })
     await client.stopped()

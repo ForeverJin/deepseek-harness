@@ -9,7 +9,6 @@ import {
   type ConnectionState,
 } from './connection.ts'
 import { createWebConnectionRpc, type RpcFetch, type RpcStreamOpen } from './rpc.ts'
-import { isLoopbackHostname } from '../loopback-hostname.ts'
 import type { ClientConnectionRpc } from '../rpc.ts'
 import { resolveConnectionConfig } from '../recovery-config.ts'
 
@@ -203,7 +202,6 @@ function watchBrowserNetwork(controller: ConnectionController): () => void {
  * @param options - physical carrier, reconnect timing, and page location.
  */
 export function installConnection(ctx: Context, options: ConnectionInstallOptions = {}): void {
-  const pageLocation = options.location
   const transport = options.transport
   const recovery = options.recovery ?? {}
   const rpc = transport?.rpc ?? createWebConnectionRpc(transport?.fetch, transport?.openStream)
@@ -245,7 +243,14 @@ export function installConnection(ctx: Context, options: ConnectionInstallOption
     publishState(undefined)
   }
   const handle: ConnectionHandle = {
-    isLoopback: transport?.ownsHost === true || pageLocation === undefined || isLoopbackHostname(pageLocation.hostname),
+    // MinuSense local patch: treat every served page as the privileged surface.
+    // Upstream reserves Host-settings persistence for loopback hostnames
+    // (127/8, ::1), so a LAN bind hides the Models and settings pages behind
+    // "settings are unavailable in this browser". This deployment serves
+    // trusted LAN browsers behind the launch-token exchange, the signed
+    // session cookie, and the listener-bind Host fence, so the loopback
+    // stand-in is extended to the bind authority as well.
+    isLoopback: true,
     generation: {
       getSnapshot: () => generation,
       subscribe: (listener) => {

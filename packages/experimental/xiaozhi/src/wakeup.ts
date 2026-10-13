@@ -6,6 +6,41 @@
 export function normalize(text: string): string {
   return text.normalize('NFKC').toLowerCase().replace(/[\p{P}\p{Z}\s]/gu, '')
 }
+
+/** Character bigrams of normalized text, used for echo similarity. */
+function bigrams(text: string): Set<string> {
+  const grams = new Set<string>()
+  for (let index = 0; index + 1 < text.length; index++) grams.add(text.slice(index, index + 2))
+  return grams
+}
+
+/**
+ * Whether two normalized texts are close enough that the second can be the first
+ * heard back through the speaker-microphone loop with ASR word errors.
+ * @param left - Normalized transcript.
+ * @param right - Normalized spoken text or sentence.
+ * @returns True when character-bigram similarity is at least 0.55.
+ */
+function similar(left: string, right: string): boolean {
+  if (left.length < 2 || right.length < 2) return left === right
+  const leftGrams = bigrams(left)
+  const rightGrams = bigrams(right)
+  let shared = 0
+  for (const gram of leftGrams) if (rightGrams.has(gram)) shared++
+  return (2 * shared) / (leftGrams.size + rightGrams.size) >= 0.55
+}
+
+/**
+ * Whether a normalized transcript echoes spoken text: an exact substring, or a
+ * fuzzy match against any spoken sentence (VAD segments the echo per sentence).
+ * @param clean - Normalized transcript.
+ * @param spoken - Normalized spoken text.
+ * @returns True when the transcript should be treated as echo.
+ */
+function isEcho(clean: string, spoken: string): boolean {
+  if (clean.length >= 2 && (spoken.includes(clean) || clean.includes(spoken))) return true
+  return spoken.split(/[。！？!?；;\n]+/).some(part => part.length >= 2 && similar(clean, part))
+}
 /** Result of wake, stop-command, and echo admission. */
 export type Admission = { kind: 'ignore' } | { kind: 'wake' } | { kind: 'stop'; cancelAgent: boolean } | { kind: 'prompt'; text: string }
 /** Per-connection gate; only accepted human activity renews its dialogue window. */
@@ -45,9 +80,7 @@ export class WakeGate {
     const clean = normalize(text)
     if (!clean) return { kind: 'ignore' }
     this.recentSpeech = this.recentSpeech.filter(item => item.until > now)
-    if (this.recentSpeech.some(item => clean.length >= 2 && (item.text.includes(clean) || clean.includes(item.text)))) {
-      return { kind: 'ignore' }
-    }
+    if (this.recentSpeech.some(item => isEcho(clean, item.text))) return { kind: 'ignore' }
     let remaining = text
     let woke = false
     for (const word of [...this.wakeWords].sort((a, b) => normalize(b).length - normalize(a).length)) {
@@ -59,7 +92,14 @@ export class WakeGate {
         break
       }
     }
-    if (!woke && !busy && now >= this.activeUntil) return { kind: 'ignore' }
+    if (!woke) {
+      if (busy) {
+        // While our own audio plays or an owned request runs, un-welcomed non-command speech is
+        // most likely the microphone hearing the reply back; only stop commands stay actionable.
+        const commands = [...this.stopWords, ...this.cancelWords]
+        if (!commands.some(word => normalize(word) === clean)) return { kind: 'ignore' }
+      } else if (now >= this.activeUntil) return { kind: 'ignore' }
+    }
     this.activeUntil = now + this.timeoutMs
     if (!normalize(remaining)) return { kind: 'wake' }
     if ([...this.stopWords, ...this.cancelWords].some(word => normalize(word) === normalize(remaining))) return { kind: 'stop', cancelAgent: this.cancelWords.some(word => normalize(word) === normalize(remaining)) }

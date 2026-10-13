@@ -62,11 +62,20 @@ export function resolveTelemetryPatch(disabledEnv: string | undefined, hasRow: b
  */
 export function readProfilePatches(binName: string, context: ProfileContext, initialProfile?: Profile): PatchOptions[] {
   const profile = initialProfile ?? loadProfileDirectory(binName, context.dir, context.installAnchor, { userLayer: false })
+  // An overlay's `insert` rows must be established before the user and home
+  // layers compose: those layers legitimately configure or disable a row the
+  // overlay introduces (the Settings page writes such config patches), and a
+  // composition that inserts only afterwards silently drops them. Overlay
+  // patches that target existing rows stay last, keeping the overlay the
+  // final authority over every row it does not introduce.
+  const overlayInserts = context.overlays.filter(patch => patch.insert !== undefined)
+  const overlayPatches = context.overlays.filter(patch => patch.insert === undefined)
   const patches = structuredClone([
     ...profile.layers.flatMap(layer => layer.patches),
+    ...overlayInserts,
     ...(initialProfile?.patches ?? loadOptionalPatches(binName, context.patchPath) ?? []),
     ...(loadOptionalPatches(binName, join(context.home, PROFILE_PATCH_FILENAME)) ?? []),
-    ...context.overlays,
+    ...overlayPatches,
   ])
   const telemetryPatch = resolveTelemetryPatch(context.telemetryDisabledEnv,
     composeEntries([patches]).some(row => row.id === TELEMETRY_ROW_ID))

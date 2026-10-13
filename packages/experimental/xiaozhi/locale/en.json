@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Xiaozhi Voice",
+    "description": "Connect the Xiaozhi Linux voice client to Harness: wake-word admission, continuous dialogue, and playback, with ASR/TTS backends configurable on the Plugins page."
+  }
+}

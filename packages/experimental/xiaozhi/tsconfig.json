@@ -1,33 +1,11 @@
 {
-  "extends": "../../../tsconfig.base.json",
-  "compilerOptions": {
-    "rootDir": "src",
-    "outDir": "lib/types"
-  },
-  "include": [
-    "src"
-  ],
+  "files": [],
   "references": [
     {
-      "path": "../../../vendor/cordis"
+      "path": "./tsconfig.host.json"
     },
     {
-      "path": "../../../vendor/schemastery"
-    },
-    {
-      "path": "../../util/brand"
-    },
-    {
-      "path": "../../core/session"
-    },
-    {
-      "path": "../../host/webserver"
-    },
-    {
-      "path": "../../api/session-controller/tsconfig.host.json"
-    },
-    {
-      "path": "../../core/agent"
+      "path": "./tsconfig.client.json"
     }
   ]
 }

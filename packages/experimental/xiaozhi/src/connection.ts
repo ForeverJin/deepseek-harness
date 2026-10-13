@@ -8,6 +8,7 @@ import type {} from '@deepseek-ai/dsh-api-session-controller'
 import WebSocket, { type RawData } from 'ws'
 import { decodeAudio, encodeAudio, parseClient, parseVoice } from './protocol.ts'
 import { WakeGate, speechText } from './wakeup.ts'
+import { hasVoiceSettings, voiceSettingsOf } from './types.ts'
 import type { GatewayConfig, DeviceBinding, ListenMode, ProtocolVersion, SynthesisId } from './types.ts'
 
 interface VoiceRequest {
@@ -38,6 +39,8 @@ export class DeviceConnection {
   private request: VoiceRequest | undefined
   private speech: { id: SynthesisId; text: string } | undefined
   private deadline: NodeJS.Timeout | undefined
+  private voiceSettingsSynced = false
+  private lastVoiceSettings: string | undefined
   private readonly heartbeat: NodeJS.Timeout
   private alive = true
   private readonly handshake: NodeJS.Timeout
@@ -62,7 +65,10 @@ export class DeviceConnection {
     })
     this.provider.on('error', (error) => { this.fail(error) })
     this.provider.on('close', () => { if (!this.lifetime.signal.aborted) this.fail(new Error('Voice service disconnected')) })
-    this.provider.on('open', () => { this.sendProvider({ type: 'hello', sample_rate: 16000, frame_duration: 60 }) })
+    this.provider.on('open', () => {
+      this.sendProvider({ type: 'hello', sample_rate: 16000, frame_duration: 60 })
+      this.syncVoiceSettings()
+    })
     socket.on('error', (error) => { this.fail(error) })
     socket.on('close', () => { this.dispose() })
     socket.on('pong', () => { this.alive = true })
@@ -150,7 +156,25 @@ export class DeviceConnection {
   private startListening(mode: ListenMode): void {
     this.listening = true
     this.epoch++
+    this.syncVoiceSettings()
     this.sendProvider({ type: 'listen', state: 'start', mode, epoch: this.epoch })
+  }
+
+  /**
+   * Push speech-backend overrides to the speech service when the live
+   * configuration changed since the last push. Volatile values are not
+   * observable, so re-reads happen at the open, listen, and synthesize
+   * boundaries; the next utterance or synthesis already uses the new backends.
+   */
+  private syncVoiceSettings(): void {
+    if (this.provider.readyState !== WebSocket.OPEN) return
+    const settings = voiceSettingsOf(this.config)
+    const fingerprint = JSON.stringify(settings)
+    if (this.voiceSettingsSynced && fingerprint === this.lastVoiceSettings) return
+    if (!this.voiceSettingsSynced && !hasVoiceSettings(settings)) return
+    this.voiceSettingsSynced = true
+    this.lastVoiceSettings = fingerprint
+    this.sendProvider({ type: 'configure', ...settings })
   }
 
   private receiveVoice(frame: Buffer, binary: boolean): void {
@@ -288,6 +312,7 @@ export class DeviceConnection {
     this.speech = { id: brandString<SynthesisId>(randomUUID()), text }
     this.gate.spoken(text, Date.now())
     this.armDeadline()
+    this.syncVoiceSettings()
     this.sendProvider({ type: 'synthesize', ...this.speech })
   }
 

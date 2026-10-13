@@ -26,7 +26,7 @@ Talk to a Harness Agent through the existing Xiaozhi Linux client. Wake with a c
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount alongside `webServer`, `sessionController`, `sessions`, and `agents`. The following Loader configuration is the deployment template; Linux hardware and a complete production profile need deployment verification.
+The package ships its own bundle patch (`cordis.patch.yml` declaring the `xiaozhi-voice` row), `locale/` display metadata, and `icon.svg`, and deploys as an installed plugin bundle: link it as a profile dependency, select it in `dsh.profile.bundles`, and the Plugins page lists "Xiaozhi Voice" under installed plugins with its enable switch, uninstall control, and settings form. Machine-owned configuration lives in the profile user layer (`cordis.patch.yml`), overriding the bundle row by id; secrets stay environment expressions:
 
 ```yaml
 - id: xiaozhi-voice
@@ -43,7 +43,7 @@ Mount alongside `webServer`, `sessionController`, `sessions`, and `agents`. The 
 
 For local deployment, configure `localService`: `cwd` is the absolute installed Python speech-project directory and `command` is its virtual-environment Python. `args` defaults to `["-m", "xiaozhi_voice.server", "--managed"]`; startup and shutdown deadlines default to 15000ms and 5000ms. Omit `voiceUrl` and `voiceToken` in this mode. The plugin generates an ephemeral token, uses a random loopback port, mounts the device route after readiness, and awaits worker exit on unload. Unexpected exit rejects new connections; check dependencies and reload the plugin. Python, libopus, and speech providers remain deployment prerequisites; Edge TTS also requires ffmpeg. Managed mode does not install dependencies.
 
-The package must be resolvable from the profile. For a source checkout, the parent MinuSense configuration generator writes a file-URL plugin row. Its name points at the built entry instead of an unpublished npm package.
+The package must be resolvable from the profile. For a source checkout, the parent MinuSense `tools/configure-voice.py` performs the whole provisioning (user-layer row, linked dependency, selected bundle, install) against the built package; its name points at the built entry instead of an unpublished npm package.
 
 The client URL ends in `/xiaozhi/v1` without a trailing slash. Set its `websocket.token` to the device token and `websocket.version` to 3. Bind `deviceId` to `network.mac_address` in the client settings. Protocol versions 1, 2, and 3 are supported with mono 16kHz Opus and 60ms frames.
 
@@ -61,10 +61,17 @@ Enable `XIAOZHI_SKIP_ACTIVATION=1`, `XIAOZHI_AUTO_LISTEN=1`, and `XIAOZHI_BARGE_
 | `allowBargeIn` | true | Accept new validated requests during an owned turn or playback |
 | `heartbeatMs`, `handshakeTimeoutMs`, `operationTimeoutMs` | 20000, 10000, 180000 | Socket liveness, hello deadline, and accepted work deadline |
 | `maxPayloadBytes`, `maxBufferedBytes`, `maxTextChars` | 65536, 262144, 12000 | Frame, queue, and transcript/answer bounds |
+| `asrProvider`, `funasrUrl`, `minimaxAsrModel`, `minimaxAsrLanguage` | empty | ASR backend overrides; empty inherits the speech-service environment |
+| `ttsProvider`, `edgeVoice`, `minimaxTtsModel`, `minimaxTtsVoice` | empty | TTS backend overrides; empty inherits the speech-service environment |
+| `minimaxApiKey`, `minimaxBaseUrl`, `minimaxGroupId` | empty | MiniMax connection overrides; the key is write-only |
 
 Waiting speech is ignored unless it starts with a wake prefix. Pure wake synthesizes the greeting. Accepted speech renews the dialogue window; a finished answer reopens it. Heartbeats and raw audio do not renew it. Reconnect restores the configured session but starts asleep and never replays historical speech.
 
 Transport failures close the voice connection and report a retry message. Playback cancellation drops late packets by synthesis identity. Disconnect or unload cancels the device-owned turn; completed tool effects remain. Cancellation requests are not execution rollback guarantees.
+
+### Speech-backend settings page
+
+The backend-override fields above are `volatile`: the package's Plugins-page detail view embeds the settings form (registered into the `plugins.bundle.config` slot, keyed by package name; the browser half loads automatically through the package's `dsh.client` declaration, and the settings namespace is the Loader entry id, e.g. `xiaozhi-voice`). Saving writes the profile `cordis.patch.yml` and applies live: at connection open, each listen, and each synthesis the gateway compares its live configuration and sends a `configure` control to the speech service when it changed — the next utterance or synthesis uses the new backends without a service restart. The key field is write-only (stored via `role('secret')` redaction); clearing it uses the form's dedicated button. `configure` payloads carry secrets only over the `VOICE_TOKEN`-authenticated link and are never logged.
 
 -----
 

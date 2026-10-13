@@ -5,6 +5,7 @@ import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-api-session-controller'
 import type {} from '@deepseek-ai/dsh-session'
+import type {} from '@deepseek-ai/dsh-settings'
 import { WebSocketServer } from 'ws'
 import { DeviceConnection } from './connection.ts'
 import { startLocalVoice } from './local-voice.ts'
@@ -14,8 +15,16 @@ export type { GatewayConfig, DeviceBinding } from './types.ts'
 
 export const name = 'xiaozhi'
 export const inject = ['webServer', 'sessionController', 'sessions', 'agents']
+
+/** Empty string or a bounded token without whitespace, for model/voice/key-style overrides. */
+const overrideToken = /^(?:|\S{1,128})$/
+/** Empty string or an http(s) URL, for the MiniMax API root. */
+const httpUrl = /^(?:|https?:\/\/\S{1,2040})$/
+/** Empty string or a WebSocket URL, for the FunASR endpoint. */
+const wsUrl = /^(?:|wss?:\/\/\S{1,2040})$/
+
 /** Deployment-owned tunables; invalid bindings fail before any route is mounted. */
-export const Config: z<GatewayConfig> = z.object({
+export const Config = z.object({
   path: z.string().default('/xiaozhi/v1'),
   voiceUrl: z.string().default(''),
   voiceToken: z.string().default(''),
@@ -33,7 +42,7 @@ export const Config: z<GatewayConfig> = z.object({
   cancelWords: z.array(z.string()).default(['停止执行']),
   greeting: z.string().default('我在，请说。'),
   dialogueTimeoutMs: z.number().default(60000),
-  echoGuardMs: z.number().default(3000),
+  echoGuardMs: z.number().default(5000),
   heartbeatMs: z.number().default(20000),
   handshakeTimeoutMs: z.number().default(10000),
   operationTimeoutMs: z.number().default(180000),
@@ -41,6 +50,18 @@ export const Config: z<GatewayConfig> = z.object({
   maxBufferedBytes: z.number().default(262144),
   maxTextChars: z.number().default(12000),
   allowBargeIn: z.boolean().default(true),
+  // Speech-backend overrides pushed to the speech service; empty inherits its environment.
+  asrProvider: z.union(['', 'funasr', 'minimax']).default('').volatile(),
+  funasrUrl: z.string().pattern(wsUrl).default('').volatile(),
+  minimaxAsrModel: z.string().pattern(overrideToken).default('').volatile(),
+  minimaxAsrLanguage: z.string().pattern(overrideToken).default('').volatile(),
+  ttsProvider: z.union(['', 'edge', 'minimax']).default('').volatile(),
+  edgeVoice: z.string().pattern(overrideToken).default('').volatile(),
+  minimaxTtsModel: z.string().pattern(overrideToken).default('').volatile(),
+  minimaxTtsVoice: z.string().pattern(overrideToken).default('').volatile(),
+  minimaxApiKey: z.string().role('secret').pattern(overrideToken).default('').volatile(),
+  minimaxBaseUrl: z.string().pattern(httpUrl).default('').volatile(),
+  minimaxGroupId: z.string().pattern(overrideToken).default('').volatile(),
 })
 
 function equalToken(actual: string, expected: string): boolean {
@@ -55,6 +76,10 @@ function equalToken(actual: string, expected: string): boolean {
  * @returns Readiness after the device upgrade route is registered.
  */
 export async function apply(ctx: Context, config: GatewayConfig): Promise<void> {
+  // The browser half serves a hand-written Plugins-page form for the
+  // `xiaozhi-voice` namespace, so the settings service must not offer an
+  // auto-generated one beside it.
+  ctx.inject(['settings'], (child) => { child.effect(() => child.settings.configure({ auto: false }, ctx.fiber)) })
   if (!/^\/(?:[a-zA-Z0-9_-]+\/)*[a-zA-Z0-9_-]+$/.test(config.path)) throw new Error('xiaozhi: invalid route path')
   if (config.localService === undefined) {
     const url = new URL(config.voiceUrl)

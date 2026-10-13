@@ -26,7 +26,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-与 `webServer`、`sessionController`、`sessions`、`agents` 一起挂载。以下 Loader 配置是部署模板；Linux 硬件和完整生产 profile 需要在部署环境验收。
+本包自带 bundle patch（`cordis.patch.yml` 声明 `xiaozhi-voice` 行）、`locale/` 显示元数据与 `icon.svg`，按**已安装插件 bundle** 的方式部署：profile 依赖里 link 本包、`dsh.profile.bundles` 选中它，插件页「已安装插件」分组即出现「小智语音」卡（含启用开关、卸载与设置表单）。机器专属配置写在 profile 用户层（`cordis.patch.yml`），按行 id 覆盖 bundle 行；机密保持环境表达式：
 
 ```yaml
 - id: xiaozhi-voice
@@ -43,7 +43,7 @@ kind: "package-reference"
 
 本机部署可配置 `localService`：`cwd` 指向已安装依赖的 Python 语音工程绝对路径，`command` 指向该工程 `.venv` 的 Python；`args` 默认 `["-m", "xiaozhi_voice.server", "--managed"]`，启动期限默认 15000ms，退出宽限默认 5000ms。此模式不填写 `voiceUrl` 或 `voiceToken`，插件生成临时 token 并使用随机回环端口。服务就绪后才注册设备路由，卸载时等待服务退出；意外退出后拒绝新连接，需要检查依赖并重载插件。Python、libopus 和语音供应商仍需配置，Edge TTS 还需要 ffmpeg；托管模式不自动安装依赖。
 
-包必须能由 profile 解析。源码工程可使用父级 MinuSense 的配置生成器写出 file-URL 插件条目；该条目指向构建入口，无需依赖尚未发布的 npm 包。
+包必须能由 profile 解析。源码工程用父级 MinuSense 的 `tools/configure-voice.py` 一步完成部署（写用户层行、link 依赖、选中 bundle 并安装），条目指向构建入口，无需依赖尚未发布的 npm 包。
 
 客户端 URL 以 `/xiaozhi/v1` 结束，不带末尾斜杠。`websocket.token` 使用设备 token，`websocket.version` 设为 3。`deviceId` 对应客户端设置中的 `network.mac_address`。支持协议版本 1、2、3，音频限定为单声道 16kHz Opus、60ms 帧。
 
@@ -61,10 +61,17 @@ Linux 客户端开启 `XIAOZHI_SKIP_ACTIVATION=1`、`XIAOZHI_AUTO_LISTEN=1`、`X
 | `allowBargeIn` | true | 当前轮次或播放期间接受新的有效请求 |
 | `heartbeatMs`、`handshakeTimeoutMs`、`operationTimeoutMs` | 20000、10000、180000 | 连接存活检查、握手期限、已接受操作期限 |
 | `maxPayloadBytes`、`maxBufferedBytes`、`maxTextChars` | 65536、262144、12000 | 帧、队列、识别与回答文字上限 |
+| `asrProvider`、`funasrUrl`、`minimaxAsrModel`、`minimaxAsrLanguage` | 空 | 识别后端覆盖；空值沿用语音服务环境变量 |
+| `ttsProvider`、`edgeVoice`、`minimaxTtsModel`、`minimaxTtsVoice` | 空 | 合成后端覆盖；空值沿用语音服务环境变量 |
+| `minimaxApiKey`、`minimaxBaseUrl`、`minimaxGroupId` | 空 | MiniMax 连接覆盖；密钥只写不读 |
 
 待机语音仅在以唤醒前缀开头时被接受。纯唤醒合成问候语。有效用户输入续期对话窗口，回答结束后重新开放窗口；心跳与原始音频不续期。重连恢复配置的会话，但从待唤醒状态开始，不重播历史语音。
 
 传输失败会关闭语音连接并提示重连。取消播报通过合成标识丢弃迟到音频。断线或卸载会取消设备拥有的轮次；已经完成的工具效果保留。取消请求不保证回滚执行结果。
+
+### 语音后端设置页
+
+上表的后端覆盖字段带 `volatile` 标记：WebUI「插件」页「小智语音」包详情页内嵌设置表单（表单注册进 `plugins.bundle.config` slot、按包名 keyed；浏览器半边经包声明 `dsh.client` 自动加载，设置 namespace 为 Loader 条目 id，如 `xiaozhi-voice`）。表单保存写入 profile 的 `cordis.patch.yml` 并热生效；网关在连接建立、每次收音和每次合成前对比配置快照，变化时向语音服务发送 `configure` 控制消息——下一次收音或合成即使用新后端，无需重启语音服务。密钥字段只写不读（写入经 `role('secret')` 脱敏），清除需用表单中的「清除已保存的密钥」按钮。`configure` 载荷包含密钥，仅经 `VOICE_TOKEN` 鉴权的链路传输，不会出现在日志中。
 
 -----
 

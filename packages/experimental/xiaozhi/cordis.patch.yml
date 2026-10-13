@@ -1,0 +1,6 @@
+# The Xiaozhi voice gateway bundle patch: one row, this package.
+# Later layers (the profile's cordis.patch.yml user layer) supply the
+# machine-owned config by this row id; secrets stay environment expressions.
+- insert:
+    - id: xiaozhi-voice
+      name: '@deepseek-ai/dsh-experimental-xiaozhi'

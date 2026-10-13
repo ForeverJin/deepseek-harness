@@ -1,3 +1,4 @@
+import type { Volatile } from '@deepseek-ai/cordis'
 import type { Branded } from '@deepseek-ai/dsh-brand'
 
 /** Identity of one cancellable synthesis across the speech-service boundary. */
@@ -67,6 +68,73 @@ export interface GatewayConfig {
   maxTextChars: number
   /** Whether new accepted requests may replace an owned request or playback. @default true */
   allowBargeIn: boolean
+  /**
+   * Speech-backend overrides pushed to the speech service as `configure`
+   * controls; an empty string inherits the service-side environment value.
+   */
+  asrProvider: Volatile<string>
+  /** FunASR offline WebSocket URL override; empty keeps the service environment. */
+  funasrUrl: Volatile<string>
+  /** MiniMax ASR model override; empty keeps the service environment. */
+  minimaxAsrModel: Volatile<string>
+  /** MiniMax ASR BCP-47 language override; empty keeps automatic detection. */
+  minimaxAsrLanguage: Volatile<string>
+  /** Speech synthesis backend override; empty keeps the service environment. */
+  ttsProvider: Volatile<string>
+  /** Edge TTS voice override; empty keeps the service environment. */
+  edgeVoice: Volatile<string>
+  /** MiniMax TTS model override; empty keeps the service environment. */
+  minimaxTtsModel: Volatile<string>
+  /** MiniMax TTS voice override; empty keeps the service environment. */
+  minimaxTtsVoice: Volatile<string>
+  /** MiniMax API key override; empty keeps the service environment. */
+  minimaxApiKey: Volatile<string>
+  /** MiniMax API root override; empty keeps the service environment. */
+  minimaxBaseUrl: Volatile<string>
+  /** MiniMax GroupId override for legacy JWT keys; empty keeps the service environment. */
+  minimaxGroupId: Volatile<string>
+}
+/** Wire payload of one `configure` control; absent fields inherit the service environment. */
+export interface VoiceSettings {
+  minimax: { api_key?: string; base_url?: string; group_id?: string }
+  asr: { provider?: string; funasr_url?: string; minimax_model?: string; minimax_language?: string }
+  tts: { provider?: string; edge_voice?: string; minimax_model?: string; minimax_voice?: string }
+}
+/**
+ * Whether a `configure` payload carries any override at all.
+ * @param settings - the payload `voiceSettingsOf` produced.
+ * @returns false when every section is empty, meaning the service-side environment stands.
+ */
+export function hasVoiceSettings(settings: VoiceSettings): boolean {
+  return Object.keys(settings.minimax).length > 0
+    || Object.keys(settings.asr).length > 0
+    || Object.keys(settings.tts).length > 0
+}
+/**
+ * Read the current speech-backend overrides off a live gateway configuration.
+ * @param config - gateway configuration whose volatile fields hold the settings-page values.
+ * @returns the `configure` payload for the speech service.
+ */
+export function voiceSettingsOf(config: GatewayConfig): VoiceSettings {
+  return {
+    minimax: {
+      ...(config.minimaxApiKey.get() === '' ? {} : { api_key: config.minimaxApiKey.get() }),
+      ...(config.minimaxBaseUrl.get() === '' ? {} : { base_url: config.minimaxBaseUrl.get() }),
+      ...(config.minimaxGroupId.get() === '' ? {} : { group_id: config.minimaxGroupId.get() }),
+    },
+    asr: {
+      ...(config.asrProvider.get() === '' ? {} : { provider: config.asrProvider.get() }),
+      ...(config.funasrUrl.get() === '' ? {} : { funasr_url: config.funasrUrl.get() }),
+      ...(config.minimaxAsrModel.get() === '' ? {} : { minimax_model: config.minimaxAsrModel.get() }),
+      ...(config.minimaxAsrLanguage.get() === '' ? {} : { minimax_language: config.minimaxAsrLanguage.get() }),
+    },
+    tts: {
+      ...(config.ttsProvider.get() === '' ? {} : { provider: config.ttsProvider.get() }),
+      ...(config.edgeVoice.get() === '' ? {} : { edge_voice: config.edgeVoice.get() }),
+      ...(config.minimaxTtsModel.get() === '' ? {} : { minimax_model: config.minimaxTtsModel.get() }),
+      ...(config.minimaxTtsVoice.get() === '' ? {} : { minimax_voice: config.minimaxTtsVoice.get() }),
+    },
+  }
 }
 /** Supported Linux audio-envelope versions. */
 export type ProtocolVersion = 1 | 2 | 3
