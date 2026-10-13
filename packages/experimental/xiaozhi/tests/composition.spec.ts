@@ -114,11 +114,19 @@ it('gates wake, records real prompts and committed replies, and requires wake af
   const app = await fixture([textResponse('第一回答'), textResponse('第二回答')])
   try {
     const client = await app.connect()
+    // Voice dialogue phases published for desktop companions.
+    const phases: string[] = []
+    // The event declaration lives in src/connection.ts; the aggregate test program does not
+    // see that interface merge, so assert the name and keep the payload typed here.
+    app.ctx.on('xiaozhi/voice-phase' as never, (_session: SessionId, phase: string) => phases.push(phase))
     // Non-empty overrides reach the speech service as one configure right after the gateway hello.
     await expect.poll(() => app.configures.length).toBeGreaterThanOrEqual(1)
     expect(app.configures[0]).toEqual({
       type: 'configure', minimax: {}, asr: { provider: 'minimax' }, tts: { minimax_voice: 'male-qn-qingse' },
+      wake: { words: '小智小智' },
     })
+    client.send({ type: 'listen', state: 'start', mode: 'auto' })
+    client.send({ type: 'listen', state: 'stop' })
     client.send({ type: 'listen', state: 'detect', text: '背景谈话' })
     client.send({ type: 'listen', state: 'detect', text: '小智小智' })
     await client.stopped()
@@ -131,6 +139,7 @@ it('gates wake, records real prompts and committed replies, and requires wake af
     expect(session.snapshotEvents().filter(event => event.type === 'user/message').map(event => event.data.content))
       .toEqual([[{ type: 'text', text: '查看目录' }]])
     expect(app.syntheses[1]?.text).toBe('第一回答')
+    expect(phases).toEqual(['listening', 'idle', 'speaking', 'idle', 'thinking', 'speaking', 'idle'])
     expect(decodeAudio(client.audio[0]!, 3)).toEqual(Buffer.from([0xf8, 0x12]))
     client.socket.close()
     await once(client.socket, 'close')

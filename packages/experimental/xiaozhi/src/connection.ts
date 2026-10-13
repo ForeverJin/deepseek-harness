@@ -23,6 +23,17 @@ function bytes(data: RawData): Buffer {
   return Array.isArray(data) ? Buffer.concat(data) : Buffer.isBuffer(data) ? data : Buffer.from(data)
 }
 
+declare module '@deepseek-ai/cordis' {
+  interface Events {
+    /**
+     * Voice dialogue phase of a connected device, for desktop companions:
+     * listening (auto VAD window open), thinking (owned turn running),
+     * speaking (synthesis playback active), idle otherwise.
+     */
+    'xiaozhi/voice-phase': (session: SessionId, phase: 'idle' | 'listening' | 'thinking' | 'speaking') => void
+  }
+}
+
 /** A socket-local runtime; reconnects retain only the configured Harness session. */
 export class DeviceConnection {
   private readonly lifetime = new AbortController()
@@ -32,6 +43,7 @@ export class DeviceConnection {
   private ready = false
   private failing = false
   private listening = false
+  private phase: 'idle' | 'listening' | 'thinking' | 'speaking' = 'idle'
   private epoch = 0
   private queue = Promise.resolve()
   private queuedBytes = 0
@@ -111,6 +123,12 @@ export class DeviceConnection {
   }
   private sendProvider(value: object): void { this.send(this.provider, JSON.stringify(value)) }
   private sendClient(value: object): void { this.send(this.socket, JSON.stringify({ session_id: this.sessionId, ...value })) }
+  /** Publish the dialogue phase for desktop companions listening on the event bus. */
+  private setPhase(phase: 'idle' | 'listening' | 'thinking' | 'speaking'): void {
+    if (this.phase === phase) return
+    this.phase = phase
+    this.ctx.emit('xiaozhi/voice-phase', this.sessionId, phase)
+  }
 
   private async receiveClient(frame: Buffer, binary: boolean): Promise<void> {
     if (binary) {
@@ -134,6 +152,7 @@ export class DeviceConnection {
         if (message.state === 'start') this.startListening(message.mode)
         else if (message.state === 'stop') {
           this.listening = false
+          this.setPhase('idle')
           this.sendProvider({ type: 'listen', state: 'stop', epoch: this.epoch })
         } else await this.admit(message.text)
         break
@@ -156,6 +175,7 @@ export class DeviceConnection {
   private startListening(mode: ListenMode): void {
     this.listening = true
     this.epoch++
+    if (mode === 'auto') this.setPhase('listening')
     this.syncVoiceSettings()
     this.sendProvider({ type: 'listen', state: 'start', mode, epoch: this.epoch })
   }
@@ -215,6 +235,7 @@ export class DeviceConnection {
           this.speech = undefined
           this.clearDeadline()
           this.gate.resume(Date.now())
+          this.setPhase('idle')
         }
         break
       case 'wake': {
@@ -247,6 +268,7 @@ export class DeviceConnection {
     const control = new AbortController()
     const operation: VoiceRequest = { id: brandString<SessionRequestId>(randomUUID()), answer: '', admitting: true, control }
     this.request = operation
+    this.setPhase('thinking')
     this.armDeadline()
     this.sendClient({ type: 'stt', text: admission.text })
     try {
@@ -319,7 +341,7 @@ export class DeviceConnection {
         const answer = speechText(request.answer)
         if (answer.length > this.config.maxTextChars) { this.fail(new Error('Answer exceeds speech limit')); return }
         if (answer) this.speak(answer)
-        else { this.sendClient({ type: 'tts', state: 'stop' }); this.gate.resume(Date.now()) }
+        else { this.sendClient({ type: 'tts', state: 'stop' }); this.gate.resume(Date.now()); this.setPhase('idle') }
       } else if (event.data.reason.kind !== 'aborted' && event.data.reason.kind !== 'completed') this.fail(new Error('Harness turn did not complete'))
     }
   }
@@ -327,6 +349,7 @@ export class DeviceConnection {
   private speak(text: string): void {
     if (!text) { this.gate.resume(Date.now()); return }
     this.speech = { id: brandString<SynthesisId>(randomUUID()), text }
+    this.setPhase('speaking')
     this.gate.spoken(text, Date.now())
     this.armDeadline()
     this.syncVoiceSettings()
@@ -389,6 +412,7 @@ export class DeviceConnection {
   dispose(): void {
     if (this.lifetime.signal.aborted) return
     try { this.stop(true) } catch (error) { this.ctx.logger.warn(`xiaozhi: cancellation failed: ${String(error)}`) }
+    this.setPhase('idle')
     this.lifetime.abort()
     clearInterval(this.heartbeat)
     clearTimeout(this.handshake)
