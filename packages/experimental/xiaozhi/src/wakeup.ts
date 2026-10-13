@@ -93,12 +93,12 @@ export class WakeGate {
       }
     }
     if (!woke) {
-      if (busy) {
-        // While our own audio plays or an owned request runs, un-welcomed non-command speech is
-        // most likely the microphone hearing the reply back; only stop commands stay actionable.
-        const commands = [...this.stopWords, ...this.cancelWords]
-        if (!commands.some(word => normalize(word) === clean)) return { kind: 'ignore' }
-      } else if (now >= this.activeUntil) return { kind: 'ignore' }
+      // The echo guard above already drops transcripts of our own TTS heard back through
+      // the microphone, so speech while busy that survived it is genuine user input:
+      // the connection layer decides barge-in (allowBargeIn) instead of dropping it here.
+      // Blanket-ignoring busy speech would invite-then-ignore right after a wake
+      // greeting told the user to speak.
+      if (!busy && now >= this.activeUntil) return { kind: 'ignore' }
     }
     this.activeUntil = now + this.timeoutMs
     if (!normalize(remaining)) return { kind: 'wake' }
@@ -107,12 +107,22 @@ export class WakeGate {
   }
 }
 /**
+ * Remove chain-of-thought that some OpenAI-compatible backends inline into text
+ * blocks instead of native thinking blocks.
+ */
+function stripInlineThinking(text: string): string {
+  return text.replace(/<(think|thinking|reasoning)>([\s\S]*?)<\/\1>/gi, '')
+    .replace(/<(think|thinking|reasoning)>[\s\S]*$/gi, '')
+    .replace(/<\/(?:think|thinking|reasoning)>/gi, '')
+}
+
+/**
  * Project assistant prose into speakable text.
  * @param text - Committed assistant text.
- * @returns Text with fenced code, URLs, images, and Markdown decoration removed.
+ * @returns Text with chain-of-thought, fenced code, URLs, images, and Markdown decoration removed.
  */
 export function speechText(text: string): string {
-  return text.replace(/```[\s\S]*?```/g, '').replace(/!\[[^\]]*\]\([^)]*\)/g, '')
+  return stripInlineThinking(text).replace(/```[\s\S]*?```/g, '').replace(/!\[[^\]]*\]\([^)]*\)/g, '')
     .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1').replace(/https?:\/\/\S+/g, '')
     .replace(/^[\s]*[#>*-]+\s*/gm, '').replace(/[`*_]/g, '').trim()
 }

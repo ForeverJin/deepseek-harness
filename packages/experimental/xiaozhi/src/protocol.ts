@@ -55,6 +55,9 @@ export function parseVoice(text: string, maxTextChars: number): VoiceMessage {
   if (value.type === 'tts' && (value.state === 'start' || value.state === 'stop') && typeof value.id === 'string' && /^[a-f0-9-]{36}$/.test(value.id)) {
     return { type: 'tts', state: value.state, id: brandString<SynthesisId>(value.id) }
   }
+  if (value.type === 'wake' && typeof value.keyword === 'string' && value.keyword.length > 0 && value.keyword.length <= maxTextChars) {
+    return { type: 'wake', keyword: value.keyword }
+  }
   if (value.type === 'error' && typeof value.message === 'string') return { type: 'error', message: value.message }
   throw new Error('Invalid voice-service message')
 }

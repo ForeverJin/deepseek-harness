@@ -76,8 +76,7 @@ export interface GatewayConfig {
   /** FunASR offline WebSocket URL override; empty keeps the service environment. */
   funasrUrl: Volatile<string>
   /** MiniMax ASR model override; empty keeps the service environment. */
-  minimaxAsrModel: Volatile<string>
-  /** MiniMax ASR BCP-47 language override; empty keeps automatic detection. */
+  minimaxAsrModel: Volatile<string>  /** MiniMax ASR BCP-47 language override; empty keeps automatic detection. */
   minimaxAsrLanguage: Volatile<string>
   /** Speech synthesis backend override; empty keeps the service environment. */
   ttsProvider: Volatile<string>
@@ -99,6 +98,7 @@ export interface VoiceSettings {
   minimax: { api_key?: string; base_url?: string; group_id?: string }
   asr: { provider?: string; funasr_url?: string; minimax_model?: string; minimax_language?: string }
   tts: { provider?: string; edge_voice?: string; minimax_model?: string; minimax_voice?: string }
+  wake: { words?: string }
 }
 /**
  * Whether a `configure` payload carries any override at all.
@@ -109,6 +109,7 @@ export function hasVoiceSettings(settings: VoiceSettings): boolean {
   return Object.keys(settings.minimax).length > 0
     || Object.keys(settings.asr).length > 0
     || Object.keys(settings.tts).length > 0
+    || Object.keys(settings.wake).length > 0
 }
 /**
  * Read the current speech-backend overrides off a live gateway configuration.
@@ -134,6 +135,10 @@ export function voiceSettingsOf(config: GatewayConfig): VoiceSettings {
       ...(config.minimaxTtsModel.get() === '' ? {} : { minimax_model: config.minimaxTtsModel.get() }),
       ...(config.minimaxTtsVoice.get() === '' ? {} : { minimax_voice: config.minimaxTtsVoice.get() }),
     },
+    wake: {
+      // Comma-joined wake words for the speech service's acoustic spotter.
+      ...(config.wakeWords.length === 0 ? {} : { words: config.wakeWords.join(',') }),
+    },
   }
 }
 /** Supported Linux audio-envelope versions. */
@@ -152,4 +157,5 @@ export type VoiceMessage =
   | { type: 'ready' }
   | { type: 'transcript'; epoch: number; text: string }
   | { type: 'tts'; state: 'start' | 'stop'; id: SynthesisId }
+  | { type: 'wake'; keyword: string }
   | { type: 'error'; message: string }

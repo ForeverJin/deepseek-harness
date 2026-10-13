@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { decodeAudio, encodeAudio, parseClient, parseVoice } from '../src/protocol.ts'
+import { voiceSettingsOf } from '../src/types.ts'
 import { WakeGate, speechText } from '../src/wakeup.ts'
 
 const hello = { type: 'hello', transport: 'websocket', version: 3, audio_params: { format: 'opus', sample_rate: 16000, channels: 1, frame_duration: 60 } }
@@ -22,6 +23,21 @@ describe('Xiaozhi audio protocol', () => {
     expect(() => parseClient(JSON.stringify({ ...hello, audio_params: { ...hello.audio_params, sample_rate: 24000 } }), 10)).toThrow()
     expect(() => parseVoice(JSON.stringify({ type: 'transcript', epoch: -1, text: 'a' }), 10)).toThrow()
     expect(() => parseVoice(JSON.stringify({ type: 'transcript', epoch: 1, text: 'a'.repeat(11) }), 10)).toThrow()
+  })
+  it('accepts acoustic wake hits and rejects malformed ones', () => {
+    expect(parseVoice(JSON.stringify({ type: 'wake', keyword: '小智' }), 10)).toEqual({ type: 'wake', keyword: '小智' })
+    expect(() => parseVoice(JSON.stringify({ type: 'wake', keyword: '' }), 10)).toThrow()
+    expect(() => parseVoice(JSON.stringify({ type: 'wake' }), 10)).toThrow()
+    expect(() => parseVoice(JSON.stringify({ type: 'wake', keyword: 'x'.repeat(11) }), 10)).toThrow()
+  })
+  it('carries configured wake words into the configure payload', () => {
+    const config = {
+      minimaxApiKey: { get: () => '' }, minimaxBaseUrl: { get: () => '' }, minimaxGroupId: { get: () => '' },
+      asrProvider: { get: () => '' }, funasrUrl: { get: () => '' }, minimaxAsrModel: { get: () => '' }, minimaxAsrLanguage: { get: () => '' },
+      ttsProvider: { get: () => '' }, edgeVoice: { get: () => '' }, minimaxTtsModel: { get: () => '' }, minimaxTtsVoice: { get: () => '' },
+      wakeWords: ['小智', '你好小智'],
+    } as unknown as import('../src/types.ts').GatewayConfig
+    expect(voiceSettingsOf(config).wake).toEqual({ words: '小智,你好小智' })
   })
 })
 
@@ -50,9 +66,22 @@ describe('Wake admission', () => {
     expect(value.admit('停止', 1, false)).toEqual({ kind: 'ignore' })
     expect(value.admit('停止', 1, true)).toEqual({ kind: 'stop', cancelAgent: false })
     expect(value.admit('停止执行', 1, true)).toEqual({ kind: 'stop', cancelAgent: true })
-    expect(value.admit('解释停止机制', 1, true)).toEqual({ kind: 'ignore' })
     value.resume(2000)
     expect(value.admit('继续', 2500, false)).toEqual({ kind: 'prompt', text: '继续' })
+  })
+  it('admits non-echo speech while busy so the user can speak over the greeting', () => {
+    const value = gate()
+    // A query asked while the wake greeting or an answer plays must become a prompt
+    // (the connection layer barges in); only our own TTS heard back is dropped.
+    expect(value.admit('今天天气怎么样', 1, true)).toEqual({ kind: 'prompt', text: '今天天气怎么样' })
+    expect(value.admit('小智小智，查目录', 2, true)).toEqual({ kind: 'prompt', text: '查目录' })
+  })
+  it('still ignores echo of played audio while busy', () => {
+    const value = gate()
+    value.spoken('今天天气晴朗，降水概率仅百分之四', 1)
+    expect(value.admit('今天天气晴朗，降水概率仅百分之四', 2, true)).toEqual({ kind: 'ignore' })
+    expect(value.admit('降水概率仅百分之四', 3, true)).toEqual({ kind: 'ignore' })
+    expect(value.admit('帮我看看别的', 4, true)).toEqual({ kind: 'prompt', text: '帮我看看别的' })
   })
   it('ignores ASR-noisy speaker echo per sentence instead of looping on it', () => {
     const value = gate()
@@ -66,5 +95,12 @@ describe('Wake admission', () => {
   })
   it('removes code and formatting from the speech projection', () => {
     expect(speechText('# 回答\n```ts\nsecret()\n```\n[文档](https://example.com) **好**')).toBe('回答\n\n文档 好')
+  })
+  it('strips inlined chain-of-thought tags from the speech projection', () => {
+    expect(speechText('<think>先查一下目录</think>答案在这里')).toBe('答案在这里')
+    expect(speechText('<THINK>先查一下</THINK>答案')).toBe('答案')
+    expect(speechText('前半<thinking>盘算中</thinking>后半')).toBe('前半后半')
+    expect(speechText('<think>未闭合的思考被截断')).toBe('')
+    expect(speechText('孤儿闭合</think>之后的内容')).toBe('孤儿闭合之后的内容')
   })
 })

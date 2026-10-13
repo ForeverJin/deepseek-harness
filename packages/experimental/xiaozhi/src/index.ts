@@ -51,7 +51,7 @@ export const Config = z.object({
   maxTextChars: z.number().default(12000),
   allowBargeIn: z.boolean().default(true),
   // Speech-backend overrides pushed to the speech service; empty inherits its environment.
-  asrProvider: z.union(['', 'funasr', 'minimax']).default('').volatile(),
+  asrProvider: z.union(['', 'funasr', 'minimax', 'sherpa']).default('').volatile(),
   funasrUrl: z.string().pattern(wsUrl).default('').volatile(),
   minimaxAsrModel: z.string().pattern(overrideToken).default('').volatile(),
   minimaxAsrLanguage: z.string().pattern(overrideToken).default('').volatile(),

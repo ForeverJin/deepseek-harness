@@ -217,6 +217,17 @@ export class DeviceConnection {
           this.gate.resume(Date.now())
         }
         break
+      case 'wake': {
+        // Acoustic hit from the speech service's local spotter; transcript
+        // matching remains the fallback path for missed detections.
+        if (!this.ready || this.version === undefined) return
+        const busy = this.request !== undefined || this.speech !== undefined
+        if (busy && !this.config.allowBargeIn) return
+        this.stop(true)
+        this.sendClient({ type: 'stt', text: message.keyword })
+        this.speak(this.config.greeting)
+        break
+      }
       case 'error': throw new Error(`Voice service: ${message.message}`)
     }
   }
@@ -292,7 +303,13 @@ export class DeviceConnection {
     }
     if (request.control.signal.aborted) return
     if (event.type === 'assistant/message' && event.data.turn === request.turn && event.data.interrupted !== true) {
-      request.answer = event.data.message.content.filter(block => block.type === 'text').map(block => block.text).join('\n')
+      // Text emitted before tool calls in the same message is the agent narrating its next
+      // step (interleaved thinking), not a reply to the user; only trailing prose is spoken.
+      const content = event.data.message.content
+      const firstTool = content.findIndex(block => block.type === 'tool-call')
+      const prose = (firstTool === -1 ? content : content.slice(0, firstTool))
+        .filter(block => block.type === 'text').map(block => block.text).join('\n')
+      if (prose.trim()) request.answer = prose
     }
     if (event.type === 'turn/end' && event.data.turn === request.turn) {
       this.request = undefined
