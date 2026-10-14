@@ -481,3 +481,56 @@ it.each(['abort', 'disconnect'] as const)('does not submit a prompt after %s dur
     expect(app.syntheses).toHaveLength(0)
   } finally { release(); await app.close() }
 })
+
+
+it('keeps desktop-pet phases through microphone epochs, playback, stop and disconnect', async () => {
+  const app = await fixture([textResponse('长回答')]);
+  const phases: string[] = [];
+  app.ctx.on('xiaozhi/voice-phase' as never, ((_session: SessionId, phase: string) => phases.push(phase)) as never, { global: true });
+  try {
+    const client = await app.connect();
+    client.send({ type: 'listen', state: 'start', mode: 'auto' });
+    await expect.poll(() => phases.at(-1)).toBe('listening');
+    client.socket.send(encodeAudio(Buffer.from([0xf8, 0x34]), 3));
+    await expect.poll(() => app.syntheses.length).toBe(1);
+    await expect.poll(() => phases.at(-1)).toBe('speaking');
+    expect(phases).toContain('thinking');
+    // The real client opens its microphone during playback: this cannot replace speaking.
+    client.send({ type: 'listen', state: 'start', mode: 'auto' });
+    client.send({ type: 'ping' });
+    await expect.poll(() => client.controls.some(message => message.type === 'pong')).toBe(true);
+    expect(phases.at(-1)).toBe('speaking');
+    const speech = app.syntheses[0]!;
+    speech.socket.send(JSON.stringify({ type: 'tts', state: 'stop', id: speech.id }));
+    await client.stopped();
+    await expect.poll(() => phases.at(-1)).toBe('listening');
+    client.send({ type: 'listen', state: 'stop' });
+    await expect.poll(() => phases.at(-1)).toBe('idle');
+    client.send({ type: 'listen', state: 'start', mode: 'manual' });
+    await expect.poll(() => phases.at(-1)).toBe('listening');
+    client.send({ type: 'goodbye' });
+    await expect.poll(() => client.socket.readyState).toBe(WebSocket.CLOSED);
+    expect(phases.at(-1)).toBe('idle');
+  } finally { await app.close(); }
+});
+
+
+it('keeps thinking while the client restarts listening and restores listening after abort', async () => {
+  const app = await fixture(['hang']);
+  const phases: string[] = [];
+  app.ctx.on('xiaozhi/voice-phase' as never, ((_session: SessionId, phase: string) => phases.push(phase)) as never, { global: true });
+  try {
+    const client = await app.connect();
+    client.send({ type: 'listen', state: 'start', mode: 'auto' });
+    client.send({ type: 'listen', state: 'detect', text: '小智小智，开始工作' });
+    await expect.poll(() => app.adapter.requests.length).toBe(1);
+    expect(phases.at(-1)).toBe('thinking');
+    client.send({ type: 'listen', state: 'start', mode: 'auto' });
+    client.send({ type: 'ping' });
+    await expect.poll(() => client.controls.some(message => message.type === 'pong')).toBe(true);
+    expect(phases.at(-1)).toBe('thinking');
+    client.send({ type: 'abort' });
+    await client.stopped();
+    await expect.poll(() => phases.at(-1)).toBe('listening');
+  } finally { await app.close(); }
+});

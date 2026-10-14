@@ -53,7 +53,7 @@ declare module '@deepseek-ai/cordis' {
   interface Events {
     /**
      * Voice dialogue phase of a connected device, for desktop companions:
-     * listening (auto VAD window open), thinking (owned turn running),
+     * listening (microphone capture open), thinking (owned turn running),
      * speaking (synthesis playback active), idle otherwise.
      */
     'xiaozhi/voice-phase': (session: SessionId, phase: 'idle' | 'listening' | 'thinking' | 'speaking') => void
@@ -187,6 +187,13 @@ export class DeviceConnection {
     this.ctx.emit('xiaozhi/voice-phase', SessionId(this.binding.sessionId), phase)
   }
 
+  /** Microphone epoch changes must not override playback or an owned turn. */
+  private refreshPhase(): void {
+    this.setPhase(this.speech !== undefined || this.speechQueue.length > 0 ? 'speaking'
+      : this.request !== undefined || this.dialogueCreation !== undefined ? 'thinking'
+        : this.listening ? 'listening' : 'idle')
+  }
+
   private async receiveClient(frame: Buffer, binary: boolean): Promise<void> {
     if (binary) {
       if (this.version === undefined || !this.ready) throw new Error('Audio before hello')
@@ -209,7 +216,7 @@ export class DeviceConnection {
         if (message.state === 'start') this.startListening(message.mode)
         else if (message.state === 'stop') {
           this.listening = false
-          this.setPhase('idle')
+          this.refreshPhase()
           this.sendProvider({ type: 'listen', state: 'stop', epoch: this.epoch })
         } else await this.admit(message.text)
         break
@@ -232,7 +239,7 @@ export class DeviceConnection {
   private startListening(mode: ListenMode): void {
     this.listening = true
     this.epoch++
-    if (mode === 'auto') this.setPhase('listening')
+    this.refreshPhase()
     this.syncVoiceSettings()
     this.sendProvider({ type: 'listen', state: 'start', mode, epoch: this.epoch })
   }
@@ -300,7 +307,7 @@ export class DeviceConnection {
           }
           this.clearDeadline()
           this.gate.resume(Date.now())
-          this.setPhase('idle')
+          this.refreshPhase()
           // The farewell's last frame played out: hang the connection so the
           // device reconnects asleep instead of holding an open microphone.
           if (this.farewellPending) { this.dispose(); return }
@@ -350,6 +357,7 @@ export class DeviceConnection {
       return !control.signal.aborted && !this.lifetime.signal.aborted
     } finally {
       this.dialogueCreation = undefined
+      this.refreshPhase()
       this.clearDeadline()
     }
   }
@@ -471,12 +479,13 @@ export class DeviceConnection {
           this.clearDeadline()
           this.sendClient({ type: 'tts', state: 'stop' })
           this.gate.resume(Date.now())
-          this.setPhase('idle')
+          this.refreshPhase()
         }
       } else if (event.data.reason.kind === 'aborted') {
         // A cancelled answer stops mid-sentence at most; never start new ones.
         this.speechQueue = []
       } else if (event.data.reason.kind !== 'completed') this.fail(new Error('Harness turn did not complete'))
+      this.refreshPhase()
     }
   }
 
@@ -621,6 +630,7 @@ export class DeviceConnection {
     } else if ((request !== undefined || this.dialogueCreation !== undefined) && this.socket.readyState === WebSocket.OPEN) this.sendClient({ type: 'tts', state: 'stop' })
     if (cancelAgent || request === undefined) this.clearDeadline()
     this.gate.resume(Date.now())
+    this.refreshPhase()
   }
 
   private fail(error: unknown): void {

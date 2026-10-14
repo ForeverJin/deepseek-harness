@@ -91,6 +91,8 @@ Linux 客户端开启 `XIAOZHI_SKIP_ACTIVATION=1`、`XIAOZHI_AUTO_LISTEN=1`、`X
 
 网关在 upgrade 前验证设备请求头，并在每次唤醒时创建新的 Harness 会话。语音服务处理解码、切句、ASR、TTS；网关负责唤醒门控和 Agent 消息提交。只有与已提交请求标识关联的新持久事件，才能在轮次完成后触发播报；失败尝试、思考、工具参数和中断前缀不会朗读。
 
+桌宠通过 `xiaozhi/voice-phase` 接收设备的当前对话阶段。阶段按播放、未结束轮次、收音的优先级分别报告 `speaking`、`thinking`、`listening`，其余为 `idle`；播放或思考期间轮换收音 epoch 不覆盖当前阶段。播完或打断后重新按实际活动判定，断连时报告 `idle`。事件只在阶段变化时发送，消费方不能用事件年龄代替连接存活判定。
+
 Loader 组合测试使用真实 SessionController 和 AgentLoop，并借助现有控制器测试夹具提供无关的上传与查询能力。模型和语音供应商采用可控脚本，使文字记录、取消、重连、鉴权、卸载检查无需 API key。
 
 </details>
