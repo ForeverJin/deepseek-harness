@@ -53,6 +53,10 @@ export const Config = z.object({
   // full greeting sentence stalling the next utterance (with client barge-in
   // the microphone stays open even while it plays).
   greeting: z.string().default('嗯'),
+  // Official close_connection_no_voice_time pacing: say goodbye once after
+  // this much admitted-input silence, then hang; the device reconnects asleep.
+  idleFarewellMs: z.number().default(120000),
+  farewell: z.string().default('时间过得真快，先聊到这里，想聊随时叫我哦。'),
   dialogueTimeoutMs: z.number().default(60000),
   echoGuardMs: z.number().default(5000),
   heartbeatMs: z.number().default(20000),
@@ -118,7 +122,11 @@ export async function apply(ctx: Context, config: GatewayConfig): Promise<void> 
     config.operationTimeoutMs, config.maxPayloadBytes, config.maxBufferedBytes, config.maxTextChars]) {
     if (!Number.isSafeInteger(value) || value <= 0 || value > 2147483647) throw new Error('xiaozhi: limits must be positive bounded integers')
   }
-  if (config.greeting.length > config.maxTextChars || config.maxPayloadBytes > config.maxBufferedBytes) throw new Error('xiaozhi: inconsistent limits')
+  if (config.greeting.length > config.maxTextChars || config.farewell.length > config.maxTextChars
+    || config.maxPayloadBytes > config.maxBufferedBytes) throw new Error('xiaozhi: inconsistent limits')
+  if (!Number.isSafeInteger(config.idleFarewellMs) || config.idleFarewellMs < 0 || config.idleFarewellMs > 2147483647) {
+    throw new Error('xiaozhi: idleFarewellMs must be a nonnegative bounded integer')
+  }
   let workerAvailable = true
   let voiceConfig = config
   const localService = config.localService

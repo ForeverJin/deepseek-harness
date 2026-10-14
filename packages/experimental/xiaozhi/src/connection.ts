@@ -88,6 +88,8 @@ export class DeviceConnection {
   private readonly heartbeat: NodeJS.Timeout
   private alive = true
   private readonly handshake: NodeJS.Timeout
+  private idleTimer: NodeJS.Timeout | undefined
+  private farewellPending = false
   /** Stable Harness session identity configured for this device. */
   readonly sessionId
 
@@ -144,6 +146,25 @@ export class DeviceConnection {
       socket.ping()
     }, config.heartbeatMs)
     this.handshake = setTimeout(() => { this.fail(new Error('Voice handshake timed out')) }, config.handshakeTimeoutMs)
+    this.armIdleFarewell()
+  }
+
+  /** Rearm the idle farewell; admitted activity and finished speech renew it. */
+  private armIdleFarewell(): void {
+    if (this.idleTimer !== undefined) clearTimeout(this.idleTimer)
+    this.idleTimer = undefined
+    if (this.config.idleFarewellMs <= 0) return
+    this.idleTimer = setTimeout(() => {
+      // A turn or playback in progress pushes the farewell past its end.
+      if (this.request !== undefined || this.speech !== undefined || this.speechQueue.length > 0) {
+        this.armIdleFarewell()
+        return
+      }
+      // Official close_connection_no_voice_time pacing: say goodbye once,
+      // then hang the connection; the device reconnects and waits for wake.
+      this.farewellPending = true
+      this.speak(this.config.farewell)
+    }, this.config.idleFarewellMs)
   }
 
   private send(socket: WebSocket, data: string | Buffer): void {
@@ -276,6 +297,10 @@ export class DeviceConnection {
           this.clearDeadline()
           this.gate.resume(Date.now())
           this.setPhase('idle')
+          // The farewell's last frame played out: hang the connection so the
+          // device reconnects asleep instead of holding an open microphone.
+          if (this.farewellPending) { this.dispose(); return }
+          this.armIdleFarewell()
         }
         break
       case 'wake': {
@@ -290,6 +315,7 @@ export class DeviceConnection {
         const busy = this.request !== undefined
         if (busy && !this.config.allowBargeIn) return
         this.stop(true)
+        this.armIdleFarewell()
         this.sendClient({ type: 'stt', text: message.keyword })
         this.sendClient({ type: 'tts', state: 'start' })
         this.speak(this.config.greeting)
@@ -306,6 +332,9 @@ export class DeviceConnection {
     if (admission.kind === 'stop') { this.stop(admission.cancelAgent); return }
     if (busy && !this.config.allowBargeIn) return
     this.stop(true)
+    // Fresh user activity cancels a pending farewell and restarts the clock.
+    this.farewellPending = false
+    this.armIdleFarewell()
     if (admission.kind === 'wake') {
       this.sendClient({ type: 'stt', text })
       // Speaking starts at admission (official send_stt_message pacing) so the
@@ -580,6 +609,8 @@ export class DeviceConnection {
     this.lifetime.abort()
     clearInterval(this.heartbeat)
     clearTimeout(this.handshake)
+    if (this.idleTimer !== undefined) clearTimeout(this.idleTimer)
+    this.idleTimer = undefined
     this.clearDeadline()
     this.provider.terminate()
     this.socket.terminate()

@@ -25,7 +25,7 @@ import { MockAdapter, textResponse } from '../../../core/agent-loop/tests/mock-a
 import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 
 const hello = { type: 'hello', version: 3, transport: 'websocket', audio_params: { format: 'opus', sample_rate: 16000, channels: 1, frame_duration: 60 } }
-async function fixture(script: ConstructorParameters<typeof MockAdapter>[0], local = false) {
+async function fixture(script: ConstructorParameters<typeof MockAdapter>[0], local = false, overrides: Record<string, unknown> = {}) {
   const directory = mkdtempSync(join(tmpdir(), 'dsh-xiaozhi-'))
   const voice = new WebSocketServer({ host: '127.0.0.1', port: 0 })
   await once(voice, 'listening')
@@ -68,6 +68,7 @@ async function fixture(script: ConstructorParameters<typeof MockAdapter>[0], loc
     voiceUrl: `ws://127.0.0.1:${address.port}/voice`, voiceToken: 'voice-secret', dialogueTimeoutMs: 1000,
     devices: [{ deviceId: 'linux-mic', token: 'device-secret', sessionId: 'voice-device', cwd: directory }],
     asrProvider: 'minimax', minimaxTtsVoice: 'male-qn-qingse',
+    ...overrides,
   } })
   if (local) {
     const row = rows.at(-1)!
@@ -207,6 +208,22 @@ it('speaks streamed sentences while the model is still generating', async () => 
     const session = app.ctx.sessions.get(SessionId('voice-device'))!
     expect(session.snapshotEvents().filter(event => event.type === 'assistant/message')).toHaveLength(0)
     await client.socket.close()
+  } finally { await app.close() }
+})
+
+it('speaks an idle farewell and hangs the connection', async () => {
+  const app = await fixture([textResponse('第一回答')], false, { idleFarewellMs: 300 })
+  try {
+    const client = await app.connect()
+    client.send({ type: 'listen', state: 'detect', text: '小智小智' })
+    await client.stopped()
+    client.send({ type: 'listen', state: 'detect', text: '查看目录' })
+    await client.stopped(2)
+    // Admitted-input silence elapses: the goodbye plays, then the socket hangs
+    // so the device reconnects asleep instead of holding an open microphone.
+    await expect.poll(() => app.syntheses.map(item => item.text), { timeout: 5000 })
+      .toEqual(['嗯', '第一回答', '时间过得真快，先聊到这里，想聊随时叫我哦。'])
+    await expect.poll(() => client.socket.readyState).toBe(WebSocket.CLOSED)
   } finally { await app.close() }
 })
 

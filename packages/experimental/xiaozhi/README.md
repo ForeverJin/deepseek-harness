@@ -57,6 +57,7 @@ Enable `XIAOZHI_SKIP_ACTIVATION=1`, `XIAOZHI_AUTO_LISTEN=1`, and `XIAOZHI_BARGE_
 | `wakeWords` | `[小智小智]` | Wake prefixes; remaining words become the prompt |
 | `stopWords`, `cancelWords` | official 23-phrase stop list, `[停止执行]` | Whole-utterance match stops speech only, or also cancels the accepted Agent turn |
 | `greeting` | `嗯` | One-syllable wake acknowledgement; no model request |
+| `idleFarewellMs`, `farewell` | 120000, `时间过得真快，先聊到这里，想聊随时叫我哦。` | After this much admitted-input silence, speak the goodbye and hang the connection (official close_connection_no_voice_time pacing); the device reconnects asleep. 0 disables |
 | `dialogueTimeoutMs`, `echoGuardMs` | 60000, 5000 | Dialogue window and recent speech echo guard |
 | `allowBargeIn` | true | Accept new validated requests during an owned turn or playback |
 | `heartbeatMs`, `handshakeTimeoutMs`, `operationTimeoutMs` | 20000, 10000, 180000 | Socket liveness, hello deadline, and accepted work deadline |

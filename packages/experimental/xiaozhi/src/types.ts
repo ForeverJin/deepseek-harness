@@ -55,6 +55,15 @@ export interface GatewayConfig {
    * @default 嗯
    */
   greeting: string
+  /**
+   * Speech played once after this much admitted-input silence (official
+   * close_connection_no_voice_time pacing); the connection then hangs and
+   * the device reconnects asleep. Zero disables the farewell.
+   * @default 120000
+   */
+  idleFarewellMs: number
+  /** The goodbye sentence spoken when `idleFarewellMs` elapses. @default 时间过得真快，先聊到这里，想聊随时叫我哦。 */
+  farewell: string
   /** Conversation window renewed by accepted human input or response completion. @default 60000 */
   dialogueTimeoutMs: number
   /** Time in milliseconds to retain text echo guards after transmitted audio. @default 5000 */
