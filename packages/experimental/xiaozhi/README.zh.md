@@ -47,7 +47,7 @@ kind: "package-reference"
 
 客户端 URL 以 `/xiaozhi/v1` 结束，不带末尾斜杠。`websocket.token` 使用设备 token，`websocket.version` 设为 3。`deviceId` 对应客户端设置中的 `network.mac_address`。支持协议版本 1、2、3，音频限定为单声道 16kHz Opus、60ms 帧。
 
-Linux 客户端开启 `XIAOZHI_SKIP_ACTIVATION=1`、`XIAOZHI_AUTO_LISTEN=1`、`XIAOZHI_BARGE_IN=1`，以使用服务端唤醒和播放中的语音停止。每个设备与会话绑定必须唯一；同一设备的第二个并发连接返回 HTTP 409。
+Linux 客户端开启 `XIAOZHI_SKIP_ACTIVATION=1`、`XIAOZHI_AUTO_LISTEN=1`、`XIAOZHI_BARGE_IN=1`，以使用服务端唤醒和播放中的语音停止。每个设备与会话 ID 前缀必须唯一；同一设备的第二个并发连接返回 HTTP 409。
 
 | 字段 | 默认值 | 行为 |
 |---|---|---|
@@ -67,7 +67,7 @@ Linux 客户端开启 `XIAOZHI_SKIP_ACTIVATION=1`、`XIAOZHI_AUTO_LISTEN=1`、`X
 | `minimaxApiKey`、`minimaxBaseUrl`、`minimaxGroupId` | 空 | MiniMax 连接覆盖；密钥只写不读 |
 | `persona` | 内置「小智」人设 | 语音会话的角色描述（多行）；经 `xiaozhi` 预设注入 system prompt，每次组装重读 |
 
-待机语音仅在以唤醒前缀开头时被接受。纯唤醒合成问候语。有效用户输入续期对话窗口，回答结束后重新开放窗口；心跳与原始音频不续期。重连恢复配置的会话，但从待唤醒状态开始，不重播历史语音。
+待机语音仅在以唤醒前缀开头时被接受。纯唤醒合成问候语。有效用户输入续期对话窗口，回答结束后重新开放窗口；心跳与原始音频不续期。每次唤醒创建独立 Harness 任务，ID 为配置的 `sessionId` 加随机 UUID；唤醒后的连续追问沿用该任务。声学唤醒后的首条 ASR 不重复建任务。重连从待唤醒状态开始，下一次唤醒创建新任务，不恢复旧任务上下文；旧任务记录保留。设备协议的 `session_id` 与桌宠阶段事件仍使用配置的设备标识。
 
 传输失败会关闭语音连接并提示重连。取消播报通过合成标识丢弃迟到音频。断线或卸载会取消设备拥有的轮次；已经完成的工具效果保留。取消请求不保证回滚执行结果。
 
@@ -79,7 +79,7 @@ Linux 客户端开启 `XIAOZHI_SKIP_ACTIVATION=1`、`XIAOZHI_AUTO_LISTEN=1`、`X
 
 网关在启动时向预设注册表注册 `xiaozhi` Agent 预设：一个 `dsh-persona` 行（`complete: true`，抑制运行时上下文）加 minimal 同款持久 shell 组。设备行的 `agentPreset` 指向该预设时，语音会话的人设由「内建语音规则 + 角色描述 + 当前时间」构成——语音规则是插件常量（口语化短回答、禁 Markdown、容忍 ASR 同音错字、始终用中文回答、每条回复开头至多一个 emoji），角色描述（`persona` 配置，默认「小智」人设）可在设置页「角色描述」分区编辑；当前时间在每次组装时现取并追加（「现在几点」直答）。emoji 由网关分流：客户端 transcript（`sentence_start` 文本）保留表情，发给语音服务的合成文本剥离表情，TTS 不会读出来。
 
-角色描述字段带 `volatile` 标记：插件把它注册为全局 prompt 变量 `xiaozhi_persona`，预设的 persona 前缀引用该变量，每次提示词组装重新求值。因此**保存后从下一句话开始生效，无需重启 Harness 或删除语音会话**；清空则恢复内置默认人设。这与 `agentPreset`、默认模型的语义不同——后两者在会话创建时锁定，修改后必须删除旧会话并重启。提示词与预设服务缺失时网关照常路由语音，只是 `xiaozhi` 预设不可用（绑定该预设的设备创建会话会报错）。
+角色描述字段带 `volatile` 标记：插件把它注册为全局 prompt 变量 `xiaozhi_persona`，预设的 persona 前缀引用该变量，每次提示词组装重新求值。因此**保存后从下一句话开始生效，无需重启 Harness 或删除语音会话**；清空则恢复内置默认人设。这与 `agentPreset`、默认模型的语义不同——后两者在会话创建时锁定；修改部署配置并重载插件后，下一次唤醒的新任务使用新选择，无需删除旧任务。提示词与预设服务缺失时网关照常路由语音，只是 `xiaozhi` 预设不可用（绑定该预设的设备创建会话会报错）。
 
 -----
 
@@ -89,7 +89,7 @@ Linux 客户端开启 `XIAOZHI_SKIP_ACTIVATION=1`、`XIAOZHI_AUTO_LISTEN=1`、`X
 <details>
 <summary>实现细节</summary>
 
-网关在 upgrade 前验证设备请求头，并将连接绑定到配置的 Harness 会话。语音服务处理解码、切句、ASR、TTS；网关负责唤醒门控和 Agent 消息提交。只有与已提交请求标识关联的新持久事件，才能在轮次完成后触发播报；失败尝试、思考、工具参数和中断前缀不会朗读。
+网关在 upgrade 前验证设备请求头，并在每次唤醒时创建新的 Harness 会话。语音服务处理解码、切句、ASR、TTS；网关负责唤醒门控和 Agent 消息提交。只有与已提交请求标识关联的新持久事件，才能在轮次完成后触发播报；失败尝试、思考、工具参数和中断前缀不会朗读。
 
 Loader 组合测试使用真实 SessionController 和 AgentLoop，并借助现有控制器测试夹具提供无关的上传与查询能力。模型和语音供应商采用可控脚本，使文字记录、取消、重连、鉴权、卸载检查无需 API key。
 
@@ -121,7 +121,7 @@ Loader 组合测试使用真实 SessionController 和 AgentLoop，并借助现�
 
 #### KV Cache 影响
 
-已接受的输入追加到现有会话历史。唤醒配置与播放状态不修改现有模型前缀。
+每次唤醒从空历史开始，已接受的连续追问追加到该次唤醒的会话历史。唤醒配置与播放状态不修改现有模型前缀。
 
 ## 已知限制与延期工作
 

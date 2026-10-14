@@ -10,9 +10,9 @@ export interface DeviceBinding {
   deviceId: string
   /** Raw device token checked against the Authorization Bearer header. */
   token: string
-  /** Stable Harness session identity retained across device reconnects. */
+  /** Device protocol identity and prefix for a fresh Harness session on each wake. */
   sessionId: string
-  /** Host project directory used when creating or restoring the device session. */
+  /** Host project directory used when creating each voice dialogue. */
   cwd?: string
   /** Agent preset for the device session; omission uses the profile composition. */
   agentPreset?: string

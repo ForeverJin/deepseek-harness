@@ -14,6 +14,7 @@ import type { GatewayConfig, DeviceBinding, ListenMode, ProtocolVersion, Synthes
 
 interface VoiceRequest {
   id: SessionRequestId
+  sessionId: SessionId
   turn?: number
   answer: string
   answered: boolean
@@ -59,7 +60,7 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
-/** A socket-local runtime; reconnects retain only the configured Harness session. */
+/** A socket-local runtime; each wake starts a fresh Harness dialogue. */
 export class DeviceConnection {
   private readonly lifetime = new AbortController()
   private readonly gate: WakeGate
@@ -90,8 +91,11 @@ export class DeviceConnection {
   private readonly handshake: NodeJS.Timeout
   private idleTimer: NodeJS.Timeout | undefined
   private farewellPending = false
-  /** Stable Harness session identity configured for this device. */
-  readonly sessionId
+  /** Acoustic wake may also arrive as a prefixed ASR transcript. */
+  private acousticWakePending = false
+  private dialogueCreation: AbortController | undefined
+  /** Current Harness dialogue identity; device controls retain the configured identity. */
+  sessionId
 
   constructor(
     private readonly ctx: Context,
@@ -175,12 +179,12 @@ export class DeviceConnection {
     socket.send(data, (error) => { if (error) this.fail(error) })
   }
   private sendProvider(value: object): void { this.send(this.provider, JSON.stringify(value)) }
-  private sendClient(value: object): void { this.send(this.socket, JSON.stringify({ session_id: this.sessionId, ...value })) }
+  private sendClient(value: object): void { this.send(this.socket, JSON.stringify({ session_id: this.binding.sessionId, ...value })) }
   /** Publish the dialogue phase for desktop companions listening on the event bus. */
   private setPhase(phase: 'idle' | 'listening' | 'thinking' | 'speaking'): void {
     if (this.phase === phase) return
     this.phase = phase
-    this.ctx.emit('xiaozhi/voice-phase', this.sessionId, phase)
+    this.ctx.emit('xiaozhi/voice-phase', SessionId(this.binding.sessionId), phase)
   }
 
   private async receiveClient(frame: Buffer, binary: boolean): Promise<void> {
@@ -312,16 +316,41 @@ export class DeviceConnection {
         // interruptions belong to the transcript path, exactly like the
         // official backend where only device-side detection exists.
         if (this.speech !== undefined || this.speechQueue.length > 0) return
-        const busy = this.request !== undefined
-        if (busy && !this.config.allowBargeIn) return
-        this.stop(true)
-        this.armIdleFarewell()
-        this.sendClient({ type: 'stt', text: message.keyword })
-        this.sendClient({ type: 'tts', state: 'start' })
-        this.speak(this.config.greeting)
+        this.queue = this.queue.then(async () => {
+          if (this.lifetime.signal.aborted || this.speech !== undefined || this.speechQueue.length > 0) return
+          if (this.request !== undefined && !this.config.allowBargeIn) return
+          this.stop(true)
+          this.acousticWakePending = true
+          if (!await this.newDialogue()) return
+          this.farewellPending = false
+          this.armIdleFarewell()
+          this.sendClient({ type: 'stt', text: message.keyword })
+          this.sendClient({ type: 'tts', state: 'start' })
+          this.speak(this.config.greeting)
+        }).catch((error: unknown) => { this.fail(error) })
         break
       }
       case 'error': throw new Error(`Voice service: ${message.message}`)
+    }
+  }
+
+  /** Create an independent task before greeting or submitting the first prompt. */
+  private async newDialogue(): Promise<boolean> {
+    this.sessionId = SessionId(`${this.binding.sessionId}-${randomUUID()}`)
+    this.openingTurn = undefined
+    const control = new AbortController()
+    this.dialogueCreation = control
+    this.armDeadline()
+    try {
+      await this.ctx.sessionController.create({
+        sessionId: this.sessionId,
+        ...(this.binding.cwd === undefined ? {} : { cwd: this.binding.cwd }),
+        ...(this.binding.agentPreset === undefined ? {} : { agentPreset: this.binding.agentPreset }),
+      })
+      return !control.signal.aborted && !this.lifetime.signal.aborted
+    } finally {
+      this.dialogueCreation = undefined
+      this.clearDeadline()
     }
   }
 
@@ -332,6 +361,11 @@ export class DeviceConnection {
     if (admission.kind === 'stop') { this.stop(admission.cancelAgent); return }
     if (busy && !this.config.allowBargeIn) return
     this.stop(true)
+    const acousticWake = this.acousticWakePending
+    this.acousticWakePending = false
+    if (!acousticWake && (admission.kind === 'wake' || admission.woke === true)) {
+      if (!await this.newDialogue()) return
+    }
     // Fresh user activity cancels a pending farewell and restarts the clock.
     this.farewellPending = false
     this.armIdleFarewell()
@@ -344,7 +378,7 @@ export class DeviceConnection {
       return
     }
     const control = new AbortController()
-    const operation: VoiceRequest = { id: brandString<SessionRequestId>(randomUUID()), answer: '', answered: false, admitting: true, control }
+    const operation: VoiceRequest = { id: brandString<SessionRequestId>(randomUUID()), sessionId: this.sessionId, answer: '', answered: false, admitting: true, control }
     this.request = operation
     this.resetStreamState()
     this.setPhase('thinking')
@@ -360,7 +394,7 @@ export class DeviceConnection {
       control.signal.throwIfAborted()
       this.lifetime.signal.throwIfAborted()
       await this.ctx.sessionController.prompt({
-        requestId: operation.id, sessionId: this.sessionId, mode: 'queue',
+        requestId: operation.id, sessionId: operation.sessionId, mode: 'queue',
         content: [{ type: 'text', text: admission.text }],
       }, control.signal)
       // Later admission awaits may complete after the initial cancellation check.
@@ -557,7 +591,7 @@ export class DeviceConnection {
   }
 
   private cancelOwned(request: VoiceRequest): void {
-    const agent = this.ctx.agents.get(this.sessionId)
+    const agent = this.ctx.agents.get(request.sessionId)
     if (agent === undefined) return
     const pending = [...agent.inbox.nextTurn, ...agent.inbox.nextStep].find(message =>
       message.source.kind === 'user' && 'rpcId' in message.source && message.source.rpcId === request.id)
@@ -566,7 +600,7 @@ export class DeviceConnection {
       return
     }
     if (request.turn !== undefined && request.turn === this.openingTurn) {
-      this.ctx.sessionController.cancel({ sessionId: this.sessionId })
+      this.ctx.sessionController.cancel({ sessionId: request.sessionId })
     }
   }
   private stop(cancelAgent: boolean): void {
@@ -574,6 +608,7 @@ export class DeviceConnection {
     this.speechQueue = []
     this.resetStreamState()
     if (cancelAgent) {
+      this.dialogueCreation?.abort()
       if (request?.admitting !== true) this.request = undefined
       request?.control.abort()
     } else if (request !== undefined) request.muted = true
@@ -583,7 +618,7 @@ export class DeviceConnection {
       this.speech = undefined
       if (this.provider.readyState === WebSocket.OPEN) this.sendProvider({ type: 'cancel', id })
       if (this.socket.readyState === WebSocket.OPEN) this.sendClient({ type: 'tts', state: 'stop' })
-    } else if (request !== undefined && this.socket.readyState === WebSocket.OPEN) this.sendClient({ type: 'tts', state: 'stop' })
+    } else if ((request !== undefined || this.dialogueCreation !== undefined) && this.socket.readyState === WebSocket.OPEN) this.sendClient({ type: 'tts', state: 'stop' })
     if (cancelAgent || request === undefined) this.clearDeadline()
     this.gate.resume(Date.now())
   }

@@ -47,7 +47,7 @@ The package must be resolvable from the profile. For a source checkout, the pare
 
 The client URL ends in `/xiaozhi/v1` without a trailing slash. Set its `websocket.token` to the device token and `websocket.version` to 3. Bind `deviceId` to `network.mac_address` in the client settings. Protocol versions 1, 2, and 3 are supported with mono 16kHz Opus and 60ms frames.
 
-Enable `XIAOZHI_SKIP_ACTIVATION=1`, `XIAOZHI_AUTO_LISTEN=1`, and `XIAOZHI_BARGE_IN=1` in the Linux client for server-side wake-up and voice stops during playback. Each device and session binding is unique; a second simultaneous connection for that device receives HTTP 409.
+Enable `XIAOZHI_SKIP_ACTIVATION=1`, `XIAOZHI_AUTO_LISTEN=1`, and `XIAOZHI_BARGE_IN=1` in the Linux client for server-side wake-up and voice stops during playback. Each device and session ID prefix is unique; a second simultaneous connection for that device receives HTTP 409.
 
 | Field | Default | Behavior |
 |---|---|---|
@@ -67,7 +67,7 @@ Enable `XIAOZHI_SKIP_ACTIVATION=1`, `XIAOZHI_AUTO_LISTEN=1`, and `XIAOZHI_BARGE_
 | `minimaxApiKey`, `minimaxBaseUrl`, `minimaxGroupId` | empty | MiniMax connection overrides; the key is write-only |
 | `persona` | built-in Xiaozhi persona | Role description for voice sessions (multiline); injected through the `xiaozhi` preset and re-read on every prompt assembly |
 
-Waiting speech is ignored unless it starts with a wake prefix. Pure wake synthesizes the greeting. Accepted speech renews the dialogue window; a finished answer reopens it. Heartbeats and raw audio do not renew it. Reconnect restores the configured session but starts asleep and never replays historical speech.
+Waiting speech is ignored unless it starts with a wake prefix. Pure wake synthesizes the greeting. Accepted speech renews the dialogue window; a finished answer reopens it. Heartbeats and raw audio do not renew it. Each wake creates an independent Harness task with the configured `sessionId` plus a random UUID; follow-ups use that task. The first ASR transcript after acoustic wake does not create another task. Reconnect starts asleep; the next wake creates a new task without restoring old context. Old task records remain available. Device protocol `session_id` and companion phase events retain the configured device identity.
 
 Transport failures close the voice connection and report a retry message. Playback cancellation drops late packets by synthesis identity. Disconnect or unload cancels the device-owned turn; completed tool effects remain. Cancellation requests are not execution rollback guarantees.
 
@@ -79,7 +79,7 @@ The backend-override fields above are `volatile`: the package's Plugins-page det
 
 At startup the gateway registers the `xiaozhi` agent preset with the preset registry: one `dsh-persona` row (`complete: true`, runtime context suppressed) over the persistent shell group the minimal preset ships. When a device binding selects that preset, the session's persona is the built-in speech rules plus the role description plus the current time — the rules (short spoken replies, no Markdown, ASR homophone tolerance, always answer in Chinese, at most one leading emoji) are plugin constants, the role description (the `persona` field, defaulting to the Xiaozhi persona) is edited in the settings page's role-description section, and the time line is taken fresh on every assembly so "what time is it" answers directly. Emoji split at the gateway: the client transcript (`sentence_start` text) keeps the expression, the synthesis payload strips it so TTS never reads it.
 
-The role-description field is `volatile`: the plugin exposes it as the global prompt variable `xiaozhi_persona`, the preset's persona prefix references that variable, and every prompt assembly re-evaluates it. Saving therefore **takes effect from the next utterance without restarting Harness or recreating the voice session**; clearing it restores the built-in default. This differs from `agentPreset` and the default model, which are pinned at session creation and require removing the old session after changes. Without the prompt or preset services the gateway still routes voice; only the `xiaozhi` preset is unavailable (devices bound to it fail at session creation).
+The role-description field is `volatile`: the plugin exposes it as the global prompt variable `xiaozhi_persona`, the preset's persona prefix references that variable, and every prompt assembly re-evaluates it. Saving therefore **takes effect from the next utterance without restarting Harness or recreating the voice session**; clearing it restores the built-in default. This differs from `agentPreset` and the default model, which are pinned at session creation; after changing deployment configuration and reloading the plugin, the next wake uses the new selection without deleting old tasks. Without the prompt or preset services the gateway still routes voice; only the `xiaozhi` preset is unavailable (devices bound to it fail at session creation).
 
 -----
 
@@ -89,7 +89,7 @@ The role-description field is `volatile`: the plugin exposes it as the global pr
 <details>
 <summary>Implementation internals</summary>
 
-The gateway authenticates device headers before upgrade and binds each socket to a configured Harness session. The speech service performs audio decoding, segmentation, ASR, and TTS; the gateway owns wake admission and Agent delivery. Only new durable events correlated with the submitted prompt identity can trigger playback, after the turn completes. Failed attempts, reasoning, tool arguments, and interrupted prefixes are not spoken.
+The gateway authenticates device headers before upgrade and creates a new Harness session at each wake. The speech service performs audio decoding, segmentation, ASR, and TTS; the gateway owns wake admission and Agent delivery. Only new durable events correlated with the submitted prompt identity can trigger playback, after the turn completes. Failed attempts, reasoning, tool arguments, and interrupted prefixes are not spoken.
 
 The Loader composition tests use a real SessionController and AgentLoop, with existing controller test fixtures for unrelated upload/query capabilities. Scripted model and voice providers make transcript, cancellation, reconnect, authentication, and disposal checks keyless.
 

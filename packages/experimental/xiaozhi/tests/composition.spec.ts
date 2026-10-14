@@ -101,7 +101,10 @@ async function fixture(script: ConstructorParameters<typeof MockAdapter>[0], loc
       async stopped(count = 1) { await expect.poll(() => controls.filter(message => message.type === 'tts' && message.state === 'stop').length).toBeGreaterThanOrEqual(count) } }
   }
   return {
-    ctx, adapter, syntheses, cancellations, uplink, configures, url, connect, voiceConnections: () => voice.clients.size,
+    ctx, adapter, syntheses, cancellations, uplink, configures, url, connect,
+    dialogue: () => ctx.sessions.list().filter(session => session.id.startsWith('voice-device-')).at(-1)!,
+    wake: () => { for (const socket of voice.clients) socket.send(JSON.stringify({ type: 'wake', keyword: '小智小智' })) },
+    voiceConnections: () => voice.clients.size,
     async close() {
       await ctx.fiber.dispose()
       for (const socket of voice.clients) socket.terminate()
@@ -136,7 +139,7 @@ it('gates wake, records real prompts and committed replies, and requires wake af
     client.send({ type: 'listen', state: 'detect', text: '查看目录' })
     await client.stopped(2)
     expect(app.adapter.requests).toHaveLength(1)
-    const session = app.ctx.sessions.get(SessionId('voice-device'))!
+    const session = app.dialogue()
     expect(session.snapshotEvents().filter(event => event.type === 'user/message').map(event => event.data.content))
       .toEqual([[{ type: 'text', text: '查看目录' }]])
     expect(app.syntheses[1]?.text).toBe('第一回答')
@@ -151,7 +154,11 @@ it('gates wake, records real prompts and committed replies, and requires wake af
     await reconnect.stopped()
     expect(app.adapter.requests).toHaveLength(2)
     expect(app.syntheses[2]?.text).toBe('第二回答')
-    expect(session.snapshotEvents().flatMap(event =>
+    const second = app.dialogue()
+    expect(second.id).not.toBe(session.id)
+    expect(app.adapter.requests[1]?.messages.filter(message => message.role === 'user').map(message => message.content))
+      .toEqual([[{ type: 'text', text: '第二个请求' }]])
+    expect([session, second].flatMap(dialogue => dialogue.snapshotEvents()).flatMap(event =>
       event.type === 'user/message' || event.type === 'assistant/message'
         ? [{ role: event.type, text: (event.type === 'user/message' ? event.data.content : event.data.message.content)
           .filter(block => block.type === 'text').map(block => block.text).join('') }] : [],
@@ -175,7 +182,8 @@ it('gates wake, records real prompts and committed replies, and requires wake af
   },
 ]
 `)
-    expect(session.snapshotEvents().filter(event => event.type === 'user/message')).toHaveLength(2)
+    expect(session.snapshotEvents().filter(event => event.type === 'user/message')).toHaveLength(1)
+    expect(second.snapshotEvents().filter(event => event.type === 'user/message')).toHaveLength(1)
   } finally { await app.close() }
 })
 
@@ -205,9 +213,9 @@ it('speaks streamed sentences while the model is still generating', async () => 
     client.send({ type: 'listen', state: 'detect', text: '小智小智，讲个笑话' })
     await client.stopped()
     await expect.poll(() => app.syntheses.map(item => item.text), { timeout: 3000 }).toEqual(['好呀，'])
-    const session = app.ctx.sessions.get(SessionId('voice-device'))!
+    const session = app.dialogue()
     expect(session.snapshotEvents().filter(event => event.type === 'assistant/message')).toHaveLength(0)
-    await client.socket.close()
+    client.socket.close()
   } finally { await app.close() }
 })
 
@@ -256,7 +264,7 @@ it('cancels a generating Agent and removes its route on unload', async () => {
     await expect.poll(() => app.adapter.requests.length).toBe(1)
     client.send({ type: 'abort' })
     await client.stopped()
-    await expect.poll(() => app.ctx.agents.get(SessionId('voice-device'))?.status).toBe('idle')
+    await expect.poll(() => app.ctx.agents.get(app.dialogue().id)?.status).toBe('idle')
     expect(app.syntheses).toHaveLength(0)
     const closed = once(client.socket, 'close')
     await app.ctx.loader.resolve('voice').fiber?.dispose()
@@ -289,10 +297,10 @@ it('stops speech without cancelling work until the explicit execution stop', asy
     await expect.poll(() => app.adapter.requests.length).toBe(1)
     client.send({ type: 'listen', state: 'detect', text: '停止' })
     await client.stopped()
-    expect(app.ctx.agents.get(SessionId('voice-device'))?.status).toBe('running')
+    expect(app.ctx.agents.get(app.dialogue().id)?.status).toBe('running')
     client.send({ type: 'listen', state: 'detect', text: '停止执行' })
     await client.stopped(2)
-    await expect.poll(() => app.ctx.agents.get(SessionId('voice-device'))?.status).toBe('idle')
+    await expect.poll(() => app.ctx.agents.get(app.dialogue().id)?.status).toBe('idle')
     expect(app.syntheses).toHaveLength(0)
   } finally { await app.close() }
 })
@@ -316,20 +324,22 @@ it('removes its queued prompt without cancelling another active user turn', asyn
   const app = await fixture(['hang'])
   try {
     const client = await app.connect()
-    const agent = app.ctx.agents.get(SessionId('voice-device'))!
+    client.send({ type: 'listen', state: 'detect', text: '小智小智' })
+    await client.stopped()
+    const agent = app.ctx.agents.get(app.dialogue().id)!
     const { createUserMessage } = await import('@deepseek-ai/dsh-llm')
     agent.followup(createUserMessage({ content: [{ type: 'text', text: 'another user task' }], source: { kind: 'user' } }))
     await expect.poll(() => app.adapter.requests.length).toBe(1)
-    client.send({ type: 'listen', state: 'detect', text: '小智小智，排队语音任务' })
+    client.send({ type: 'listen', state: 'detect', text: '排队语音任务' })
     await expect.poll(() => agent.inbox.nextTurn.length).toBe(1)
     client.send({ type: 'abort' })
-    await client.stopped()
+    await client.stopped(2)
     await expect.poll(() => agent.inbox.nextTurn.length).toBe(0)
     expect(agent.status).toBe('running')
     expect(app.adapter.requests).toHaveLength(1)
     app.ctx.sessionController.cancel({ sessionId: agent.id })
     await expect.poll(() => agent.status).toBe('idle')
-    expect(app.syntheses).toHaveLength(0)
+    expect(app.syntheses.map(item => item.text)).toEqual(['嗯'])
   } finally { await app.close() }
 })
 
@@ -350,7 +360,7 @@ it('cancels an owned claim during pre-step admission before invoking the model',
     await expect.poll(() => entered).toBe(true)
     client.send({ type: 'abort' })
     await client.stopped()
-    await expect.poll(() => app.ctx.agents.get(SessionId('voice-device'))?.status).toBe('idle')
+    await expect.poll(() => app.ctx.agents.get(app.dialogue().id)?.status).toBe('idle')
     expect(app.adapter.requests).toHaveLength(0)
     expect(app.syntheses).toHaveLength(0)
   } finally { await app.close() }
@@ -368,4 +378,106 @@ it('loads an owned speech worker through Loader and releases its endpoint on unl
   } finally { await app.close() }
   const probe = new WebSocket(app.url)
   await expect(once(probe, 'open')).rejects.toThrow()
+})
+
+it('starts a fresh task on each wake and keeps follow-ups in that dialogue', async () => {
+  const app = await fixture([textResponse('记住了'), textResponse('你叫小明'), textResponse('新的对话')])
+  try {
+    const client = await app.connect()
+    client.send({ type: 'listen', state: 'detect', text: '小智小智，我叫小明' })
+    await client.stopped()
+    const first = app.dialogue()
+    client.send({ type: 'listen', state: 'detect', text: '我叫什么名字' })
+    await client.stopped(2)
+    expect(app.dialogue().id).toBe(first.id)
+    expect(app.adapter.requests[1]?.messages.filter(message => message.role === 'user').map(message => message.content))
+      .toEqual([[{ type: 'text', text: '我叫小明' }], [{ type: 'text', text: '我叫什么名字' }]])
+    client.send({ type: 'listen', state: 'detect', text: '小智小智，另一个问题' })
+    await client.stopped(3)
+    const second = app.dialogue()
+    expect(second.id).not.toBe(first.id)
+    expect(app.ctx.sessions.list().filter(session => session.id.startsWith('voice-device-'))).toHaveLength(2)
+    expect(app.adapter.requests[2]?.messages.filter(message => message.role === 'user').map(message => message.content))
+      .toEqual([[{ type: 'text', text: '另一个问题' }]])
+    expect([first, second].map(session => session.snapshotEvents().flatMap(event =>
+      event.type === 'user/message' ? event.data.content.filter(block => block.type === 'text').map(block => block.text) : [])))
+      .toMatchInlineSnapshot(`
+[
+  [
+    "我叫小明",
+    "我叫什么名字",
+  ],
+  [
+    "另一个问题",
+  ],
+]
+`)
+  } finally { await app.close() }
+})
+
+it('deduplicates acoustic wake and its prefixed transcript into one task', async () => {
+  const app = await fixture([textResponse('回答一'), textResponse('回答二')])
+  try {
+    const client = await app.connect()
+    app.wake()
+    await client.stopped()
+    const first = app.dialogue()
+    client.send({ type: 'listen', state: 'detect', text: '小智小智，第一个问题' })
+    await client.stopped(2)
+    expect(app.dialogue().id).toBe(first.id)
+    app.wake()
+    await client.stopped(3)
+    const second = app.dialogue()
+    expect(second.id).not.toBe(first.id)
+    client.send({ type: 'listen', state: 'detect', text: '第二个问题' })
+    await client.stopped(4)
+    expect(app.dialogue().id).toBe(second.id)
+    expect(app.ctx.sessions.list().filter(session => session.id.startsWith('voice-device-'))).toHaveLength(2)
+  } finally { await app.close() }
+})
+
+it('cancels the old owned turn before a new wake starts another task', async () => {
+  const app = await fixture(['hang', textResponse('新任务回答')])
+  try {
+    const client = await app.connect()
+    client.send({ type: 'listen', state: 'detect', text: '小智小智，开始工作' })
+    await expect.poll(() => app.adapter.requests.length).toBe(1)
+    const first = app.dialogue()
+    client.send({ type: 'listen', state: 'detect', text: '小智小智，换个任务' })
+    await expect.poll(() => app.adapter.requests.length).toBe(2)
+    await expect.poll(() => app.ctx.agents.get(first.id)?.status).toBe('idle')
+    await expect.poll(() => app.syntheses.map(item => item.text)).toEqual(['新任务回答'])
+    expect(app.dialogue().id).not.toBe(first.id)
+  } finally { await app.close() }
+})
+
+it.each(['abort', 'disconnect'] as const)('does not submit a prompt after %s during new-task creation', async (action) => {
+  const app = await fixture([])
+  let release!: () => void
+  const barrier = new Promise<void>((resolve) => { release = resolve })
+  let creating = false
+  try {
+    app.ctx.on('agent/created', async ({ agent }) => {
+      if (!agent.id.startsWith('voice-device-')) return
+      creating = true
+      await barrier
+    })
+    const client = await app.connect()
+    client.send({ type: 'listen', state: 'detect', text: '小智小智，冷启动请求' })
+    await expect.poll(() => creating).toBe(true)
+    if (action === 'disconnect') {
+      client.socket.close()
+      await once(client.socket, 'close')
+      await expect.poll(() => app.voiceConnections()).toBe(0)
+      release()
+    } else {
+      client.send({ type: 'abort' })
+      await client.stopped()
+      release()
+      client.send({ type: 'ping' })
+      await expect.poll(() => client.controls.some(message => message.type === 'pong')).toBe(true)
+    }
+    expect(app.adapter.requests).toHaveLength(0)
+    expect(app.syntheses).toHaveLength(0)
+  } finally { release(); await app.close() }
 })

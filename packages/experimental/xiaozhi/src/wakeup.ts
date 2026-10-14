@@ -42,7 +42,7 @@ function isEcho(clean: string, spoken: string): boolean {
   return spoken.split(/[。！？!?；;\n]+/).some(part => part.length >= 2 && similar(clean, part))
 }
 /** Result of wake, stop-command, and echo admission. */
-export type Admission = { kind: 'ignore' } | { kind: 'wake' } | { kind: 'stop'; cancelAgent: boolean } | { kind: 'prompt'; text: string }
+export type Admission = { kind: 'ignore' } | { kind: 'wake' } | { kind: 'stop'; cancelAgent: boolean } | { kind: 'prompt'; text: string; woke?: true }
 /** Per-connection gate; only accepted human activity renews its dialogue window. */
 export class WakeGate {
   private activeUntil = 0
@@ -103,7 +103,7 @@ export class WakeGate {
     this.activeUntil = now + this.timeoutMs
     if (!normalize(remaining)) return { kind: 'wake' }
     if ([...this.stopWords, ...this.cancelWords].some(word => normalize(word) === normalize(remaining))) return { kind: 'stop', cancelAgent: this.cancelWords.some(word => normalize(word) === normalize(remaining)) }
-    return { kind: 'prompt', text: remaining }
+    return { kind: 'prompt', text: remaining, ...(woke ? { woke: true as const } : {}) }
   }
 }
 /**

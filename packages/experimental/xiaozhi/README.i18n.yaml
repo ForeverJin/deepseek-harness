@@ -15,14 +15,17 @@
   en: d152484eb41ac6b4
   zh: 836ffb41ee595ffd
 /deepseek-ai-dsh-experimental-xiaozhi/use-this-package:
-  en: ddcc417c648e0408
-  zh: abfd1fc90d505925
+  en: 569614af5acaa68a
+  zh: f5d22f6bc42e72df
 /deepseek-ai-dsh-experimental-xiaozhi/use-this-package/speech-backend-settings-page:
-  en: 095e19e2f040d412
-  zh: a1f867567a8f2b78
+  en: bf336660c2544f45
+  zh: a1cc7d82171383f2
+/deepseek-ai-dsh-experimental-xiaozhi/use-this-package/role-description-and-the-xiaozhi-preset:
+  en: 9c1085ee71073ed6
+  zh: 276f9bd524ad3579
 /deepseek-ai-dsh-experimental-xiaozhi/understand-the-implementation:
-  en: 877b13996cb56202
-  zh: 028ee2a8af4eabeb
+  en: ef4b7beba2b9f95e
+  zh: 972b1eb594e90c58
 /deepseek-ai-dsh-experimental-xiaozhi/further-exploration:
   en: d1bca5b47056926d
   zh: b5e9dd1ca345e072
@@ -40,7 +43,7 @@
   zh: bae0cef8f76d4139
 /deepseek-ai-dsh-experimental-xiaozhi/model-experience/accepted-voice-input/kv-cache-effect:
   en: dc4adee00f62bdf8
-  zh: 434176791c345454
+  zh: 09fdd42bca481c0e
 /deepseek-ai-dsh-experimental-xiaozhi/known-limitations-and-deferred-work:
   en: 4337a8536bb6e9e1
   zh: 1dfb613c1eb8a334

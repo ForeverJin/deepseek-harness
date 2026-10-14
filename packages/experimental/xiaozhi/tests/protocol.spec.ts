@@ -52,7 +52,7 @@ describe('Wake admission', () => {
     expect(value.admit('你好', 1020, false)).toEqual({ kind: 'ignore' })
   })
   it('preserves a request following the wake prefix', () => {
-    expect(gate().admit('小智小智，查看目录', 1, false)).toEqual({ kind: 'prompt', text: '查看目录' })
+    expect(gate().admit('小智小智，查看目录', 1, false)).toEqual({ kind: 'prompt', text: '查看目录', woke: true })
   })
   it('filters echo before waking and renews only accepted activity', () => {
     const value = gate()
@@ -74,7 +74,7 @@ describe('Wake admission', () => {
     // A query asked while the wake greeting or an answer plays must become a prompt
     // (the connection layer barges in); only our own TTS heard back is dropped.
     expect(value.admit('今天天气怎么样', 1, true)).toEqual({ kind: 'prompt', text: '今天天气怎么样' })
-    expect(value.admit('小智小智，查目录', 2, true)).toEqual({ kind: 'prompt', text: '查目录' })
+    expect(value.admit('小智小智，查目录', 2, true)).toEqual({ kind: 'prompt', text: '查目录', woke: true })
   })
   it('still ignores echo of played audio while busy', () => {
     const value = gate()

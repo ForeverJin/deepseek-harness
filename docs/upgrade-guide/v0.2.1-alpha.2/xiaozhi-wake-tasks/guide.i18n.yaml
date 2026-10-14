@@ -1,0 +1,16 @@
+# Bilingual-pair consistency record for guide.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/upgrade-guide/v0.2.1-alpha.2/xiaozhi-wake-tasks/guide.md
+/:
+  en: 7d29ba74ee935ddd
+  zh: 170c0e39096646b9
+/xiaozhi-creates-a-new-task-on-each-wake:
+  en: f24910bd4a7b88f1
+  zh: 206cda18b7038f95
+/xiaozhi-creates-a-new-task-on-each-wake/change:
+  en: 4b88057e65a76161
+  zh: 17dd47a9acdf072e
+/xiaozhi-creates-a-new-task-on-each-wake/migration:
+  en: 73a0e90ee8df03d4
+  zh: 8ee1bd0652ce125b
