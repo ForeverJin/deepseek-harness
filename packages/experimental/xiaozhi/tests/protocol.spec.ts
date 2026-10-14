@@ -83,6 +83,51 @@ describe('Wake admission', () => {
     expect(value.admit('降水概率仅百分之四', 3, true)).toEqual({ kind: 'ignore' })
     expect(value.admit('帮我看看别的', 4, true)).toEqual({ kind: 'prompt', text: '帮我看看别的' })
   })
+  it('keeps echo guards for earlier sentences while the next one streams', () => {
+    const value = gate()
+    value.resume(1)
+    // spoken() fires once per relayed audio frame; the ring must retain
+    // distinct sentences, not N copies of the sentence currently playing.
+    for (let frame = 0; frame < 40; frame++) value.spoken('不过机器定位到香港：现在晴天，26 度。', frame)
+    for (let frame = 40; frame < 80; frame++) value.spoken('你在台北的话会比这里湿一点。', frame)
+    // Echoes of the first sentence land after the second started playing.
+    expect(value.admit('现在晴天。', 300, false)).toEqual({ kind: 'ignore' })
+    expect(value.admit('二十六度。', 300, false)).toEqual({ kind: 'ignore' })
+    expect(value.admit('今天天气怎么样', 400, false)).toEqual({ kind: 'prompt', text: '今天天气怎么样' })
+  })
+  it('reads digits the way ASR transcribes them for echo matching', () => {
+    const value = gate()
+    value.spoken('晴天 26 度，标准舒服的天气。', 1)
+    expect(value.admit('晴天，二十六度。', 2, true)).toEqual({ kind: 'ignore' })
+    expect(value.admit('二十六度', 3, true)).toEqual({ kind: 'ignore' })
+    expect(value.admit('帮我看看别的', 4, true)).toEqual({ kind: 'prompt', text: '帮我看看别的' })
+  })
+  it('drops fragment echoes of long comma-carried streamed sentences', () => {
+    const value = gate()
+    value.resume(1)
+    // 2026-10-14 18:15 incident: streaming synthesizes a whole comma-carried
+    // line as one unit, VAD segments the echo at those pauses, and ASR mishears
+    // a syllable (喔→哦, 卡关→考官) — fragment matching must still drop them.
+    value.spoken('星期三傍晚六点十五分，你是在哈喽，这个点还在写代码喔？', 10)
+    value.spoken('都属于下班前再跑一组的类型吧😆 MinuSense 那边进度怎样了，卡关的话跟我说一声，虽然我只会看不会改，但帮你骂骂 bug 还是可以的啦。', 20)
+    expect(value.admit('这个点还在写代码哦。', 300, false)).toEqual({ kind: 'ignore' })
+    expect(value.admit('mini sense那边进度怎样了', 300, false)).toEqual({ kind: 'ignore' })
+    expect(value.admit('考官的话，跟我说一声。', 300, false)).toEqual({ kind: 'ignore' })
+    expect(value.admit('帮我看看别的', 400, false)).toEqual({ kind: 'prompt', text: '帮我看看别的' })
+  })
+  it('drops short clause echoes with whole-word ASR mishearing and display emoji', () => {
+    const value = gate()
+    value.resume(1)
+    // 2026-10-14 18:35 incident: "我男友的梗" heard as "我哪有的梗" shares no
+    // bigram with the misheard word; the display emoji must not distort grams.
+    value.spoken('好啦听我讲一个程序员冷笑话，', 10)
+    value.spoken('我男友的梗，我免费拿的。', 20)
+    value.spoken('😆欸不是啦，', 30)
+    expect(value.admit('我哪有的梗。', 300, false)).toEqual({ kind: 'ignore' })
+    expect(value.admit('免费拿到。', 300, false)).toEqual({ kind: 'ignore' })
+    expect(value.admit('哎不是啦', 300, false)).toEqual({ kind: 'ignore' })
+    expect(value.admit('那你继续讲一个', 400, false)).toEqual({ kind: 'prompt', text: '那你继续讲一个' })
+  })
   it('ignores ASR-noisy speaker echo per sentence instead of looping on it', () => {
     const value = gate()
     value.spoken('我是 MiniMax 开发的编程助手，可以帮你查看目录。还会讲解代码。', 1)

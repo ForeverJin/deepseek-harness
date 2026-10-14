@@ -91,6 +91,8 @@ export class DeviceConnection {
   private readonly handshake: NodeJS.Timeout
   private idleTimer: NodeJS.Timeout | undefined
   private farewellPending = false
+  /** Whether this connection ever admitted wake, prompt, or stop input. */
+  private dialogueSeen = false
   /** Acoustic wake may also arrive as a prefixed ASR transcript. */
   private acousticWakePending = false
   private dialogueCreation: AbortController | undefined
@@ -158,6 +160,10 @@ export class DeviceConnection {
     if (this.idleTimer !== undefined) clearTimeout(this.idleTimer)
     this.idleTimer = undefined
     if (this.config.idleFarewellMs <= 0) return
+    // A connection that never carried a dialogue is asleep waiting for wake:
+    // saying goodbye (and hanging up, which auto-reconnects back into the same
+    // idle state) every timeout would loop the farewell out loud forever.
+    if (!this.dialogueSeen) return
     this.idleTimer = setTimeout(() => {
       // A turn or playback in progress pushes the farewell past its end.
       if (this.request !== undefined || this.speech !== undefined || this.speechQueue.length > 0) {
@@ -329,6 +335,7 @@ export class DeviceConnection {
           this.stop(true)
           this.acousticWakePending = true
           if (!await this.newDialogue()) return
+          this.dialogueSeen = true
           this.farewellPending = false
           this.armIdleFarewell()
           this.sendClient({ type: 'stt', text: message.keyword })
@@ -365,7 +372,13 @@ export class DeviceConnection {
   private async admit(text: string): Promise<void> {
     const busy = this.request !== undefined || this.speech !== undefined
     const admission = this.gate.admit(text, Date.now(), busy)
+    // Admission diagnostics: which way each final ASR text went and why the
+    // echo guards did or did not drop it. Transcripts are user-visible in the
+    // device chat anyway; configure payloads are never logged. warn because
+    // the web profile's console filters info-level plugin output.
+    this.ctx.logger.warn(`xiaozhi: admit ${admission.kind} busy=${busy} guards=${this.gate.guardState(Date.now())} text=${JSON.stringify(text)}`)
     if (admission.kind === 'ignore') return
+    this.dialogueSeen = true
     if (admission.kind === 'stop') { this.stop(admission.cancelAgent); return }
     if (busy && !this.config.allowBargeIn) return
     this.stop(true)
