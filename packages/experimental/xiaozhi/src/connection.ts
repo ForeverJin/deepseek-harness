@@ -7,7 +7,7 @@ import type { SessionRequestId } from '@deepseek-ai/dsh-api-session-controller/t
 import type {} from '@deepseek-ai/dsh-api-session-controller'
 import WebSocket, { type RawData } from 'ws'
 import { decodeAudio, encodeAudio, parseClient, parseVoice } from './protocol.ts'
-import { WakeGate, speechText } from './wakeup.ts'
+import { WakeGate, speechSynthesisText, speechText } from './wakeup.ts'
 import { hasVoiceSettings, voiceSettingsOf } from './types.ts'
 import type { GatewayConfig, DeviceBinding, ListenMode, ProtocolVersion, SynthesisId } from './types.ts'
 
@@ -261,7 +261,7 @@ export class DeviceConnection {
         // interruptions belong to the transcript path, exactly like the
         // official backend where only device-side detection exists.
         if (this.speech !== undefined || this.speechQueue.length > 0) return
-        const busy = this.request !== undefined || this.speech !== undefined
+        const busy = this.request !== undefined
         if (busy && !this.config.allowBargeIn) return
         this.stop(true)
         this.sendClient({ type: 'stt', text: message.keyword })
@@ -400,7 +400,11 @@ export class DeviceConnection {
     this.gate.spoken(text, Date.now())
     this.armDeadline()
     this.syncVoiceSettings()
-    this.sendProvider({ type: 'synthesize', ...this.speech })
+    // The client transcript keeps a leading emoji for its expression affordance;
+    // the synthesis payload drops emoji so TTS never reads them. An all-emoji
+    // sentence keeps its original text rather than synthesizing an empty string.
+    const synthesis = speechSynthesisText(text)
+    this.sendProvider({ type: 'synthesize', id: this.speech.id, text: synthesis === '' ? text : synthesis })
   }
 
   private clearDeadline(): void {

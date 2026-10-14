@@ -76,7 +76,7 @@ Linux 客户端开启 `XIAOZHI_SKIP_ACTIVATION=1`、`XIAOZHI_AUTO_LISTEN=1`、`X
 
 ### 角色描述与 `xiaozhi` 预设
 
-网关在启动时向预设注册表注册 `xiaozhi` Agent 预设：一个 `dsh-persona` 行（`complete: true`，抑制运行时上下文）加 minimal 同款持久 shell 组。设备行的 `agentPreset` 指向该预设时，语音会话的人设由「内建语音规则 + 角色描述」构成——语音规则（口语化短回答、禁 Markdown、容忍 ASR 同音错字等）是插件常量，角色描述（`persona` 配置，默认「小智」人设）可在设置页「角色描述」分区编辑。
+网关在启动时向预设注册表注册 `xiaozhi` Agent 预设：一个 `dsh-persona` 行（`complete: true`，抑制运行时上下文）加 minimal 同款持久 shell 组。设备行的 `agentPreset` 指向该预设时，语音会话的人设由「内建语音规则 + 角色描述 + 当前时间」构成——语音规则是插件常量（口语化短回答、禁 Markdown、容忍 ASR 同音错字、始终用中文回答、每条回复开头至多一个 emoji），角色描述（`persona` 配置，默认「小智」人设）可在设置页「角色描述」分区编辑；当前时间在每次组装时现取并追加（「现在几点」直答）。emoji 由网关分流：客户端 transcript（`sentence_start` 文本）保留表情，发给语音服务的合成文本剥离表情，TTS 不会读出来。
 
 角色描述字段带 `volatile` 标记：插件把它注册为全局 prompt 变量 `xiaozhi_persona`，预设的 persona 前缀引用该变量，每次提示词组装重新求值。因此**保存后从下一句话开始生效，无需重启 Harness 或删除语音会话**；清空则恢复内置默认人设。这与 `agentPreset`、默认模型的语义不同——后两者在会话创建时锁定，修改后必须删除旧会话并重启。提示词与预设服务缺失时网关照常路由语音，只是 `xiaozhi` 预设不可用（绑定该预设的设备创建会话会报错）。
 

@@ -34,16 +34,34 @@ export const VOICE_RULES = `你运行在一台语音设备上，回复会被 TTS
 2. 禁止 Markdown：不用加粗、标题、列表符号和代码块；多项内容用自然的口语衔接。
 3. 用户语音经识别可能存在同音错字，理解真实意图即可，不要纠正错别字。
 4. 讲长内容（故事、知识）先讲核心，再问用户要不要继续。
-5. 用户说"再见""拜拜""晚安"时自然告别，简短收尾。`
+5. 用户说"再见""拜拜""晚安"时自然告别，简短收尾。
+6. 始终用中文回答，即使提问是其他语言；只有用户明确要求换语言时才换。
+7. 每条回复开头至多放一个表情（从 🙂😆🤔😢😠😲😴 中选），正文里不再出现任何表情。`
+
+const WEEKDAY_NAMES = ['日', '一', '二', '三', '四', '五', '六'] as const
 
 /**
- * Compose the complete persona prompt from the built-in rules and one role description.
- * @param persona - configured role description; blank falls back to the default.
- * @returns the text rendered for the `{{xiaozhiPersona}}` variable.
+ * Format one moment as the compact context line appended to the persona.
+ * @param now - the moment to render.
+ * @returns For example `2026-10-14 23:30 星期三`.
  */
-export function personaPrompt(persona: string): string {
+export function currentTimeLine(now: Date): string {
+  const pad = (value: number): string => String(value).padStart(2, '0')
+  const weekday = WEEKDAY_NAMES[now.getDay()] ?? ''
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
+    + ` ${pad(now.getHours())}:${pad(now.getMinutes())} 星期${weekday}`
+}
+
+/**
+ * Compose the complete persona prompt from the built-in rules, one role
+ * description, and the current time.
+ * @param persona - configured role description; blank falls back to the default.
+ * @param now - assembly moment; the fresh time keeps "现在几点" answers exact.
+ * @returns the text rendered for the `{{xiaozhi_persona}}` variable.
+ */
+export function personaPrompt(persona: string, now: Date = new Date()): string {
   const role = persona.trim() === '' ? DEFAULT_PERSONA : persona.trim()
-  return `${VOICE_RULES}\n\n${role}`
+  return `${VOICE_RULES}\n\n${role}\n\n当前时间：${currentTimeLine(now)}`
 }
 
 /**

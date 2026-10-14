@@ -126,3 +126,17 @@ export function speechText(text: string): string {
     .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1').replace(/https?:\/\/\S+/g, '')
     .replace(/^[\s]*[#>*-]+\s*/gm, '').replace(/[`*_]/g, '').trim()
 }
+
+/** Emoji sequences, including skin-tone and ZWJ-joined composites. */
+const EMOJI_PATTERN = /\p{Extended_Pictographic}(?:\uFE0E|\uFE0F)?(?:\u200D\p{Extended_Pictographic}(?:\uFE0E|\uFE0F)?)*/gu
+
+/**
+ * Project display prose into synthesis text: the client keeps the leading
+ * emoji for its transcript and expression affordances, but TTS must not
+ * read it, so every emoji sequence drops out of the synthesized payload.
+ * @param text - speakable text as shown to the user.
+ * @returns the same text without emoji sequences.
+ */
+export function speechSynthesisText(text: string): string {
+  return text.replace(EMOJI_PATTERN, '').replace(/ {2,}/g, ' ').trim()
+}

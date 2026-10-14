@@ -178,6 +178,18 @@ it('gates wake, records real prompts and committed replies, and requires wake af
   } finally { await app.close() }
 })
 
+it('keeps a leading emoji for the client transcript while synthesizing without it', async () => {
+  const app = await fixture([textResponse('😄好呀，这就来。')])
+  try {
+    const client = await app.connect()
+    client.send({ type: 'listen', state: 'detect', text: '小智小智，讲个笑话' })
+    await client.stopped()
+    expect(app.syntheses.map(item => item.text)).toEqual(['好呀，这就来。'])
+    expect(client.controls.filter(message => message.type === 'tts' && message.state === 'sentence_start').map(message => message.text))
+      .toEqual(['😄好呀，这就来。'])
+  } finally { await app.close() }
+})
+
 it('forwards Opus and discards late cancelled playback packets', async () => {
   const app = await fixture([textResponse('长回答')])
   try {

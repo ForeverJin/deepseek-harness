@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { decodeAudio, encodeAudio, parseClient, parseVoice } from '../src/protocol.ts'
 import { voiceSettingsOf } from '../src/types.ts'
-import { WakeGate, speechText } from '../src/wakeup.ts'
+import { WakeGate, speechSynthesisText, speechText } from '../src/wakeup.ts'
 
 const hello = { type: 'hello', transport: 'websocket', version: 3, audio_params: { format: 'opus', sample_rate: 16000, channels: 1, frame_duration: 60 } }
 
@@ -102,5 +102,12 @@ describe('Wake admission', () => {
     expect(speechText('前半<thinking>盘算中</thinking>后半')).toBe('前半后半')
     expect(speechText('<think>未闭合的思考被截断')).toBe('')
     expect(speechText('孤儿闭合</think>之后的内容')).toBe('孤儿闭合之后的内容')
+  })
+  it('drops emoji from the synthesis text but keeps it for display', () => {
+    expect(speechSynthesisText('😄好呀，我在呢')).toBe('好呀，我在呢')
+    expect(speechSynthesisText('好的呢 😆')).toBe('好的呢')
+    expect(speechSynthesisText('🧑‍💻复杂序列也整体移除')).toBe('复杂序列也整体移除')
+    expect(speechSynthesisText('没有表情的句子')).toBe('没有表情的句子')
+    expect(speechSynthesisText('🤔')).toBe('')
   })
 })
