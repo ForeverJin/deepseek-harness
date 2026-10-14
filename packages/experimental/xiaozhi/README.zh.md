@@ -55,9 +55,9 @@ Linux 客户端开启 `XIAOZHI_SKIP_ACTIVATION=1`、`XIAOZHI_AUTO_LISTEN=1`、`X
 | `localService` | 不启用 | 可选托管进程配置；启用时替代外部服务地址和 token |
 | `path` | `/xiaozhi/v1` | WebSocket upgrade 的精确路径 |
 | `wakeWords` | `[小智小智]` | 唤醒前缀；剩余文字作为请求 |
-| `stopWords`、`cancelWords` | `[停止, 停一下, 别说了]`、`[停止执行]` | 仅停止播报，或同时取消已接受的 Agent 轮次 |
-| `greeting` | `我在，请说。` | 纯唤醒响应，不调用模型 |
-| `dialogueTimeoutMs`、`echoGuardMs` | 60000、3000 | 对话窗口和近期播报回声过滤时间 |
+| `stopWords`、`cancelWords` | 官方同款 23 短语停止表、`[停止执行]` | 整句匹配才停止播报，或同时取消已接受的 Agent 轮次 |
+| `greeting` | `嗯` | 纯唤醒的单音节确认，不调用模型 |
+| `dialogueTimeoutMs`、`echoGuardMs` | 60000、5000 | 对话窗口和近期播报回声过滤时间 |
 | `allowBargeIn` | true | 当前轮次或播放期间接受新的有效请求 |
 | `heartbeatMs`、`handshakeTimeoutMs`、`operationTimeoutMs` | 20000、10000、180000 | 连接存活检查、握手期限、已接受操作期限 |
 | `maxPayloadBytes`、`maxBufferedBytes`、`maxTextChars` | 65536、262144、12000 | 帧、队列、识别与回答文字上限 |

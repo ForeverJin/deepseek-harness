@@ -55,9 +55,9 @@ Enable `XIAOZHI_SKIP_ACTIVATION=1`, `XIAOZHI_AUTO_LISTEN=1`, and `XIAOZHI_BARGE_
 | `localService` | disabled | Optional owned speech worker; replaces external service URL and token |
 | `path` | `/xiaozhi/v1` | Exact WebSocket upgrade path |
 | `wakeWords` | `[小智小智]` | Wake prefixes; remaining words become the prompt |
-| `stopWords`, `cancelWords` | `[停止, 停一下, 别说了]`, `[停止执行]` | Stop speech only, or also cancel the accepted Agent turn |
-| `greeting` | `我在，请说。` | Pure wake response; no model request |
-| `dialogueTimeoutMs`, `echoGuardMs` | 60000, 3000 | Dialogue window and recent speech echo guard |
+| `stopWords`, `cancelWords` | official 23-phrase stop list, `[停止执行]` | Whole-utterance match stops speech only, or also cancels the accepted Agent turn |
+| `greeting` | `嗯` | One-syllable wake acknowledgement; no model request |
+| `dialogueTimeoutMs`, `echoGuardMs` | 60000, 5000 | Dialogue window and recent speech echo guard |
 | `allowBargeIn` | true | Accept new validated requests during an owned turn or playback |
 | `heartbeatMs`, `handshakeTimeoutMs`, `operationTimeoutMs` | 20000, 10000, 180000 | Socket liveness, hello deadline, and accepted work deadline |
 | `maxPayloadBytes`, `maxBufferedBytes`, `maxTextChars` | 65536, 262144, 12000 | Frame, queue, and transcript/answer bounds |

@@ -183,10 +183,12 @@ it('keeps a leading emoji for the client transcript while synthesizing without i
   try {
     const client = await app.connect()
     client.send({ type: 'listen', state: 'detect', text: '小智小智，讲个笑话' })
-    await client.stopped()
-    expect(app.syntheses.map(item => item.text)).toEqual(['好呀，这就来。'])
+    await client.stopped(2)
+    // The first sentence also breaks at its comma (official first-sentence
+    // pacing) so the opening words synthesize before a full stop exists.
+    expect(app.syntheses.map(item => item.text)).toEqual(['好呀，', '这就来。'])
     expect(client.controls.filter(message => message.type === 'tts' && message.state === 'sentence_start').map(message => message.text))
-      .toEqual(['😄好呀，这就来。'])
+      .toEqual(['😄好呀，', '这就来。'])
   } finally { await app.close() }
 })
 

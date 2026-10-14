@@ -39,7 +39,15 @@ export const Config = z.object({
     cwd: z.string(), agentPreset: z.string(),
   })).required(),
   wakeWords: z.array(z.string()).default(['小智小智']),
-  stopWords: z.array(z.string()).default(['停止', '停一下', '别说了']),
+  // The spoken stop vocabulary mirrors the official server's STOP_COMMANDS:
+  // exact full-phrase matches after normalization, so single syllables like
+  // 停 only trigger when the whole transcript is that word.
+  stopWords: z.array(z.string()).default([
+    '停', '停止', '停下', '停下来', '停一下', '停止一下', '暂停', '暂停一下',
+    '别说了', '别说', '不要说', '不要说了', '闭嘴', '打住', '住口',
+    '停止播放', '暂停播放', '停止播报', '暂停播报',
+    '请停止', '请停一下', '请别说了', '请不要说了',
+  ]),
   cancelWords: z.array(z.string()).default(['停止执行']),
   // One syllable of acknowledgement: the user hears the wake landed without a
   // full greeting sentence stalling the next utterance (with client barge-in

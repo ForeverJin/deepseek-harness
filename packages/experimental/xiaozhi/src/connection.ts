@@ -23,7 +23,18 @@ interface VoiceRequest {
 
 /** Split speakable prose into TTS-sized sentences (official FIRST/MIDDLE/LAST pacing). */
 function splitSentences(text: string): string[] {
-  return text.split(/(?<=[。！？!?；;\n])/).map(part => part.trim()).filter(part => part.length > 0)
+  const parts = text.split(/(?<=[。！？!?；;\n])/).map(part => part.trim()).filter(part => part.length > 0)
+  const first = parts[0]
+  if (first === undefined) return []
+  // The opening words additionally break at the first comma-shaped pause
+  // (official first_sentence_punctuations) so the first synthesis starts
+  // before a full stop exists; later sentences wait for real sentence ends.
+  const pause = first.search(/[，、~：,]/)
+  if (pause === -1) return parts
+  const head = first.slice(0, pause + 1).trim()
+  const tail = first.slice(pause + 1).trim()
+  if (head && tail) return [head, tail, ...parts.slice(1)]
+  return parts
 }
 function bytes(data: RawData): Buffer {
   return Array.isArray(data) ? Buffer.concat(data) : Buffer.isBuffer(data) ? data : Buffer.from(data)
@@ -236,6 +247,8 @@ export class DeviceConnection {
       case 'tts':
         if (message.id !== this.speech?.id) return
         if (message.state === 'start') {
+          // Admission already opened Speaking; between sentences the client
+          // dipped to Listening, so this start re-arms audio acceptance.
           this.sendClient({ type: 'tts', state: 'start' })
           this.sendClient({ type: 'tts', state: 'sentence_start', text: this.speech.text })
         } else {
@@ -265,6 +278,7 @@ export class DeviceConnection {
         if (busy && !this.config.allowBargeIn) return
         this.stop(true)
         this.sendClient({ type: 'stt', text: message.keyword })
+        this.sendClient({ type: 'tts', state: 'start' })
         this.speak(this.config.greeting)
         break
       }
@@ -281,6 +295,9 @@ export class DeviceConnection {
     this.stop(true)
     if (admission.kind === 'wake') {
       this.sendClient({ type: 'stt', text })
+      // Speaking starts at admission (official send_stt_message pacing) so the
+      // device shows the reply state while the answer is still generated.
+      this.sendClient({ type: 'tts', state: 'start' })
       this.speak(this.config.greeting)
       return
     }
@@ -290,6 +307,7 @@ export class DeviceConnection {
     this.setPhase('thinking')
     this.armDeadline()
     this.sendClient({ type: 'stt', text: admission.text })
+    this.sendClient({ type: 'tts', state: 'start' })
     try {
       await this.ctx.sessionController.create({
         sessionId: this.sessionId,
