@@ -192,6 +192,24 @@ it('keeps a leading emoji for the client transcript while synthesizing without i
   } finally { await app.close() }
 })
 
+it('speaks streamed sentences while the model is still generating', async () => {
+  // The stream hangs after one comma-terminated opening: the gateway must
+  // synthesize it although no assistant message has committed yet.
+  const app = await fixture([{ hangAfter: [
+    { type: 'block-start', index: 0, blockType: 'text' },
+    { type: 'text-delta', index: 0, text: '好呀，这就' },
+  ] }])
+  try {
+    const client = await app.connect()
+    client.send({ type: 'listen', state: 'detect', text: '小智小智，讲个笑话' })
+    await client.stopped()
+    await expect.poll(() => app.syntheses.map(item => item.text), { timeout: 3000 }).toEqual(['好呀，'])
+    const session = app.ctx.sessions.get(SessionId('voice-device'))!
+    expect(session.snapshotEvents().filter(event => event.type === 'assistant/message')).toHaveLength(0)
+    await client.socket.close()
+  } finally { await app.close() }
+})
+
 it('forwards Opus and discards late cancelled playback packets', async () => {
   const app = await fixture([textResponse('长回答')])
   try {

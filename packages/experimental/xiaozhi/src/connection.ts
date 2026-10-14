@@ -5,6 +5,7 @@ import { brandString } from '@deepseek-ai/dsh-brand'
 import { SessionId, type SessionEvent, type UserMessage } from '@deepseek-ai/dsh-session'
 import type { SessionRequestId } from '@deepseek-ai/dsh-api-session-controller/types'
 import type {} from '@deepseek-ai/dsh-api-session-controller'
+import type { AssistantStreamFrame } from '@deepseek-ai/dsh-agent'
 import WebSocket, { type RawData } from 'ws'
 import { decodeAudio, encodeAudio, parseClient, parseVoice } from './protocol.ts'
 import { WakeGate, speechSynthesisText, speechText } from './wakeup.ts'
@@ -16,10 +17,17 @@ interface VoiceRequest {
   turn?: number
   answer: string
   answered: boolean
+  /** Live chunks already produced speech for this turn; committed messages stay deduped. */
+  streamed?: boolean
   muted?: boolean
   admitting: boolean
   control: AbortController
 }
+
+/** Sentence-end boundaries; the unsplit tail waits for one of these. */
+const SENTENCE_PAUSES = ['。', '！', '？', '!', '?', '；', ';', '\n'] as const
+/** The answer's opening words additionally break at comma-shaped pauses. */
+const FIRST_SENTENCE_PAUSES = [...SENTENCE_PAUSES, '，', '、', '~', '：', ','] as const
 
 /** Split speakable prose into TTS-sized sentences (official FIRST/MIDDLE/LAST pacing). */
 function splitSentences(text: string): string[] {
@@ -69,6 +77,11 @@ export class DeviceConnection {
   private speech: { id: SynthesisId; text: string } | undefined
   /** Pending sentences of the owned request, spoken one synthesize at a time. */
   private speechQueue: string[] = []
+  /** Live-stream state of the owned request's current attempt. */
+  private streamAttempt: string | undefined
+  private streamBuffer = ''
+  private streamFirstSentence = true
+  private streamedChars = 0
   private deadline: NodeJS.Timeout | undefined
   private voiceSettingsSynced = false
   private lastVoiceSettings: string | undefined
@@ -304,6 +317,7 @@ export class DeviceConnection {
     const control = new AbortController()
     const operation: VoiceRequest = { id: brandString<SessionRequestId>(randomUUID()), answer: '', answered: false, admitting: true, control }
     this.request = operation
+    this.resetStreamState()
     this.setPhase('thinking')
     this.armDeadline()
     this.sendClient({ type: 'stt', text: admission.text })
@@ -367,11 +381,19 @@ export class DeviceConnection {
       const prose = (firstTool === -1 ? content : content.slice(0, firstTool))
         .filter(block => block.type === 'text').map(block => block.text).join('\n')
       if (prose.trim()) request.answer = prose
-      // A pure-text message is the spoken reply: queue its sentences now so
-      // synthesis starts while later turns of the same answer are still being
-      // generated. Text preceding tool calls in a message is the agent
-      // narrating its next step, not a reply, and stays unspoken.
-      if (firstTool === -1 && request.muted !== true) this.enqueueAnswer(speechText(prose))
+      // A pure-text message is the spoken reply, unless live streaming already
+      // spoke it: chunk-level pacing enqueues sentences while the model is
+      // still generating, so the committed message only updates bookkeeping.
+      // When nothing streamed into the queue yet (no boundary arrived, or no
+      // frames flowed), the whole message enqueues here and owns the buffer,
+      // keeping the stream-end flush from double-speaking the tail.
+      // Text preceding tool calls in a message is the agent narrating its next
+      // step — streaming speaks that too (official pacing), the fallback path
+      // keeps it unspoken.
+      if (firstTool === -1 && request.muted !== true && request.streamed !== true) {
+        this.streamBuffer = ''
+        this.enqueueAnswer(speechText(prose))
+      }
     }
     if (event.type === 'turn/end' && event.data.turn === request.turn) {
       this.request = undefined
@@ -393,6 +415,77 @@ export class DeviceConnection {
         this.speechQueue = []
       } else if (event.data.reason.kind !== 'completed') this.fail(new Error('Harness turn did not complete'))
     }
+  }
+
+  /**
+   * Feed one live assistant-stream frame; text deltas of the owned turn
+   * enqueue sentences at punctuation boundaries while still generating.
+   * @param frame - One ordered start, chunk, or end publication.
+   */
+  streamFrame(frame: AssistantStreamFrame): void {
+    try { this.receiveStreamFrame(frame) } catch (error) { this.fail(error) }
+  }
+
+  private receiveStreamFrame(frame: AssistantStreamFrame): void {
+    const request = this.request
+    if (request === undefined || request.control.signal.aborted || request.muted === true) return
+    if (frame.type === 'start') {
+      // Only the owned turn's attempts accumulate; attempts of other prompts
+      // into the same session must not leak into this answer.
+      if (request.turn === undefined || frame.turn !== request.turn) return
+      this.streamAttempt = frame.attemptId
+      return
+    }
+    if (frame.type === 'chunk') {
+      if (frame.attemptId !== this.streamAttempt || frame.chunk.type !== 'text-delta') return
+      this.streamBuffer += frame.chunk.text
+      // Cut at the LAST boundary in the buffer (official _get_segment_text
+      // rfind): the longest complete segment leaves, the tail keeps waiting.
+      let cut = -1
+      for (const pause of this.streamFirstSentence ? FIRST_SENTENCE_PAUSES : SENTENCE_PAUSES) {
+        const at = this.streamBuffer.lastIndexOf(pause)
+        if (at > cut) cut = at
+      }
+      if (cut === -1) return
+      const segment = this.streamBuffer.slice(0, cut + 1)
+      this.streamBuffer = this.streamBuffer.slice(cut + 1)
+      this.enqueueStreamSegment(segment)
+      return
+    }
+    if (frame.attemptId !== this.streamAttempt) return
+    this.streamAttempt = undefined
+    if (frame.outcome.kind === 'abandoned' || frame.outcome.eventType !== 'assistant/message') {
+      // A retried or cancelled attempt committed no message; already-started
+      // sentences finish, but nothing new starts from this text. A retry
+      // streams its own full text.
+      this.speechQueue = []
+      this.streamBuffer = ''
+      return
+    }
+    // The durable message follows immediately; speak the unsplit tail now so
+    // the answer does not wait for punctuation the model never wrote.
+    if (this.streamBuffer !== '') this.enqueueStreamSegment(this.streamBuffer)
+    this.streamBuffer = ''
+  }
+
+  private enqueueStreamSegment(segment: string): void {
+    const cleaned = speechText(segment)
+    if (cleaned === '') return
+    this.streamedChars += cleaned.length
+    if (this.streamedChars > this.config.maxTextChars) throw new Error('Answer exceeds speech limit')
+    this.streamFirstSentence = false
+    const request = this.request
+    if (request !== undefined) { request.answered = true; request.streamed = true }
+    this.speechQueue.push(cleaned)
+    if (this.speech === undefined) this.speakNext()
+  }
+
+  /** Drop live-stream state; new prompts and cancellations start clean. */
+  private resetStreamState(): void {
+    this.streamAttempt = undefined
+    this.streamBuffer = ''
+    this.streamFirstSentence = true
+    this.streamedChars = 0
   }
 
   /** Queue reply sentences for sequential synthesis; start speaking when idle. */
@@ -450,6 +543,7 @@ export class DeviceConnection {
   private stop(cancelAgent: boolean): void {
     const request = this.request
     this.speechQueue = []
+    this.resetStreamState()
     if (cancelAgent) {
       if (request?.admitting !== true) this.request = undefined
       request?.control.abort()

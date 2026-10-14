@@ -175,6 +175,14 @@ export async function apply(ctx: Context, config: GatewayConfig): Promise<void> 
       if (connection.sessionId === session.id) connection.observe(event)
     }
   })
+  // Token-level pacing: text deltas of the owned turn start sentences while
+  // the model is still generating (official streaming-TTS behavior); the
+  // committed-message path remains as the fallback when no frames flow.
+  ctx.on('agent/assistant-stream', ({ agent, frame }) => {
+    for (const connection of connections.values()) {
+      if (connection.sessionId === agent.id) connection.streamFrame(frame)
+    }
+  }, { global: true })
   ctx.effect(() => async () => {
     disposed = true
     for (const connection of [...connections.values()]) connection.dispose()
