@@ -23,10 +23,14 @@ export async function startLocalVoice(
   const env: NodeJS.ProcessEnv = {}
   for (const [key, value] of Object.entries(process.env)) {
     if (/^(PATH|PATHEXT|SYSTEMROOT|WINDIR|HOME|USERPROFILE|TEMP|TMP|LANG|LC_.*|SSL_CERT_FILE|SSL_CERT_DIR)$/i.test(key)
-      || /^(VOICE_|VAD_|FUNASR_|MINIMAX_|ASR_|TTS_|FFMPEG$)/.test(key)) env[key] = value
+      || /^(VOICE_|VAD_|ECHO_|FUNASR_|MINIMAX_|ASR_|TTS_|FFMPEG$)/.test(key)) env[key] = value
   }
   Object.assign(env, { VOICE_TOKEN: token, VOICE_HOST: '127.0.0.1', VOICE_PORT: '0', PYTHONUNBUFFERED: '1' })
-  const child = spawn(config.command, config.args, { cwd: config.cwd, env, stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true })
+  const child = spawn(config.command, config.args, { cwd: config.cwd, env, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true })
+  // The worker's stderr carries its diagnostics (Silero fallback, echo-guard
+  // drops) as numbers-only lines; surface them on the host's stderr so
+  // silent audio drops are diagnosable from the harness log.
+  child.stderr?.on('data', (chunk: Buffer) => { process.stderr.write(chunk) })
   // Parent pipe closure asks Python to stop; no credentials travel in argv or logs.
   child.stdin.on('error', () => { /* A worker exiting first may close stdin. Exit is observed below. */ })
   let closed = false, disposed = false, established = false
