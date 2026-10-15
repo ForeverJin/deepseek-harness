@@ -43,6 +43,7 @@ describe('Xiaozhi audio protocol', () => {
 
 describe('Wake admission', () => {
   const gate = () => new WakeGate(['小智小智'], ['停止', '停止执行'], 1000, 300, ['停止执行'])
+  const exitGate = () => new WakeGate(['小智小智'], ['停止', '停止执行'], 1000, 300, ['停止执行'], ['再见', '拜拜', '晚安'])
   it('ignores ambient speech and opens a window on pure wake', () => {
     const value = gate()
     expect(value.admit('今天天气很好', 10, false)).toEqual({ kind: 'ignore' })
@@ -68,6 +69,19 @@ describe('Wake admission', () => {
     expect(value.admit('停止执行', 1, true)).toEqual({ kind: 'stop', cancelAgent: true })
     value.resume(2000)
     expect(value.admit('继续', 2500, false)).toEqual({ kind: 'prompt', text: '继续' })
+  })
+  it('ends the dialogue only on whole-utterance goodbyes', () => {
+    const value = exitGate()
+    // Ambient goodbye before any wake stays ignored; the exact phrase after a
+    // wake ends the dialogue, with or without the wake prefix; a goodbye
+    // mentioned inside a longer sentence is still a prompt.
+    expect(value.admit('再见', 1, false)).toEqual({ kind: 'ignore' })
+    expect(value.admit('小智小智', 10, false)).toEqual({ kind: 'wake' })
+    expect(value.admit('再见', 20, false)).toEqual({ kind: 'exit' })
+    expect(value.admit('小智小智，拜拜！', 30, false)).toEqual({ kind: 'exit' })
+    expect(value.admit('晚安', 40, true)).toEqual({ kind: 'exit' })
+    expect(value.admit('我跟他说了再见', 50, false)).toEqual({ kind: 'prompt', text: '我跟他说了再见' })
+    expect(value.admit('再见啦', 60, false)).toEqual({ kind: 'prompt', text: '再见啦' })
   })
   it('admits non-echo speech while busy so the user can speak over the greeting', () => {
     const value = gate()

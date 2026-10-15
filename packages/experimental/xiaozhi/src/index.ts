@@ -57,6 +57,10 @@ export const Config = z.object({
   // this much admitted-input silence, then hang; the device reconnects asleep.
   idleFarewellMs: z.number().default(120000),
   farewell: z.string().default('时间过得真快，先聊到这里，想聊随时叫我哦。'),
+  // Whole-utterance goodbyes end the dialogue: goodbye reply, connection hang,
+  // device reconnects asleep waiting for the wake word (official exit_commands).
+  exitWords: z.array(z.string()).default(['再见', '拜拜', '晚安', '下次见', '回头见']),
+  goodbye: z.string().default('好的，下次再聊，想聊随时叫我哦。'),
   dialogueTimeoutMs: z.number().default(60000),
   echoGuardMs: z.number().default(5000),
   heartbeatMs: z.number().default(20000),
@@ -115,7 +119,7 @@ export async function apply(ctx: Context, config: GatewayConfig): Promise<void> 
     deviceIds.add(binding.deviceId)
     sessionIds.add(binding.sessionId)
   }
-  for (const words of [config.wakeWords, config.stopWords, config.cancelWords]) {
+  for (const words of [config.wakeWords, config.stopWords, config.cancelWords, config.exitWords]) {
     if (words.length === 0 || words.some(word => !normalize(word))) throw new Error('xiaozhi: wake and stop words must be nonempty')
   }
   for (const value of [config.dialogueTimeoutMs, config.echoGuardMs, config.heartbeatMs, config.handshakeTimeoutMs,
@@ -123,7 +127,9 @@ export async function apply(ctx: Context, config: GatewayConfig): Promise<void> 
     if (!Number.isSafeInteger(value) || value <= 0 || value > 2147483647) throw new Error('xiaozhi: limits must be positive bounded integers')
   }
   if (config.greeting.length > config.maxTextChars || config.farewell.length > config.maxTextChars
-    || config.maxPayloadBytes > config.maxBufferedBytes) throw new Error('xiaozhi: inconsistent limits')
+    || config.goodbye.length > config.maxTextChars || config.maxPayloadBytes > config.maxBufferedBytes) {
+    throw new Error('xiaozhi: inconsistent limits')
+  }
   if (!Number.isSafeInteger(config.idleFarewellMs) || config.idleFarewellMs < 0 || config.idleFarewellMs > 2147483647) {
     throw new Error('xiaozhi: idleFarewellMs must be a nonnegative bounded integer')
   }

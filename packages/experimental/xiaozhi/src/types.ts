@@ -64,6 +64,15 @@ export interface GatewayConfig {
   idleFarewellMs: number
   /** The goodbye sentence spoken when `idleFarewellMs` elapses. @default 时间过得真快，先聊到这里，想聊随时叫我哦。 */
   farewell: string
+  /**
+   * Whole-utterance goodbyes that end the dialogue: the goodbye reply plays,
+   * the connection hangs, and the device reconnects asleep waiting for the
+   * wake word (official exit_commands semantics with a spoken farewell).
+   * @default [再见, 拜拜, 晚安, 下次见, 回头见]
+   */
+  exitWords: string[]
+  /** The goodbye reply spoken for `exitWords`; the connection closes after it. @default 好的，下次再聊，想聊随时叫我哦。 */
+  goodbye: string
   /** Conversation window renewed by accepted human input or response completion. @default 60000 */
   dialogueTimeoutMs: number
   /** Time in milliseconds to retain text echo guards after transmitted audio. @default 5000 */

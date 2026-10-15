@@ -235,6 +235,32 @@ it('speaks an idle farewell and hangs the connection', async () => {
   } finally { await app.close() }
 })
 
+it('ends the dialogue on a spoken goodbye and requires wake after reconnect', async () => {
+  const app = await fixture([textResponse('第一回答')])
+  try {
+    const client = await app.connect()
+    client.send({ type: 'listen', state: 'detect', text: '小智小智' })
+    await client.stopped()
+    client.send({ type: 'listen', state: 'detect', text: '查看目录' })
+    await client.stopped(2)
+    // The whole-utterance goodbye plays one reply without a model request,
+    // then the socket hangs; ambient speech on the reconnected device stays
+    // ignored until the wake word reopens the dialogue.
+    const requests = app.adapter.requests.length
+    client.send({ type: 'listen', state: 'detect', text: '再见' })
+    await expect.poll(() => app.syntheses.map(item => item.text), { timeout: 5000 })
+      .toEqual(['嗯', '第一回答', '好的，下次再聊，想聊随时叫我哦。'])
+    await expect.poll(() => client.socket.readyState).toBe(WebSocket.CLOSED)
+    expect(app.adapter.requests).toHaveLength(requests)
+    const next = await app.connect()
+    next.send({ type: 'listen', state: 'detect', text: '查看目录' })
+    await new Promise(resolve => setTimeout(resolve, 300))
+    expect(app.adapter.requests).toHaveLength(requests)
+    next.send({ type: 'listen', state: 'detect', text: '小智小智' })
+    await next.stopped()
+  } finally { await app.close() }
+})
+
 it('forwards Opus and discards late cancelled playback packets', async () => {
   const app = await fixture([textResponse('长回答')])
   try {

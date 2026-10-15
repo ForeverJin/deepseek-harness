@@ -134,8 +134,13 @@ function isEcho(clean: string, guard: SpeechGuard): boolean {
     return false
   })
 }
-/** Result of wake, stop-command, and echo admission. */
-export type Admission = { kind: 'ignore' } | { kind: 'wake' } | { kind: 'stop'; cancelAgent: boolean } | { kind: 'prompt'; text: string; woke?: true }
+/** Result of wake, stop-command, echo, and exit admission. */
+export type Admission =
+  | { kind: 'ignore' }
+  | { kind: 'wake' }
+  | { kind: 'stop'; cancelAgent: boolean }
+  | { kind: 'exit' }
+  | { kind: 'prompt'; text: string; woke?: true }
 /** Per-connection gate; only accepted human activity renews its dialogue window. */
 export class WakeGate {
   private activeUntil = 0
@@ -146,6 +151,7 @@ export class WakeGate {
     private readonly timeoutMs: number,
     private readonly echoGuardMs: number,
     private readonly cancelWords: readonly string[],
+    private readonly exitWords: readonly string[] = [],
   ) {}
   /**
    * Retain bounded echo guards for speech sent toward the speaker.
@@ -219,6 +225,9 @@ export class WakeGate {
     this.activeUntil = now + this.timeoutMs
     if (!normalize(remaining)) return { kind: 'wake' }
     if ([...this.stopWords, ...this.cancelWords].some(word => normalize(word) === normalize(remaining))) return { kind: 'stop', cancelAgent: this.cancelWords.some(word => normalize(word) === normalize(remaining)) }
+    // A whole-utterance goodbye ends the dialogue: only the exact phrase (the
+    // wake prefix already stripped) matches, so "我跟他说了再见" stays a prompt.
+    if (this.exitWords.some(word => normalize(word) === normalize(remaining))) return { kind: 'exit' }
     return { kind: 'prompt', text: remaining, ...(woke ? { woke: true as const } : {}) }
   }
 }

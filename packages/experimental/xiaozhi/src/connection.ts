@@ -107,7 +107,7 @@ export class DeviceConnection {
     private readonly onClose: () => void,
   ) {
     this.sessionId = SessionId(binding.sessionId)
-    this.gate = new WakeGate(config.wakeWords, config.stopWords, config.dialogueTimeoutMs, config.echoGuardMs, config.cancelWords)
+    this.gate = new WakeGate(config.wakeWords, config.stopWords, config.dialogueTimeoutMs, config.echoGuardMs, config.cancelWords, config.exitWords)
     this.provider = new WebSocket(config.voiceUrl, {
       headers: { Authorization: `Bearer ${config.voiceToken}` }, maxPayload: config.maxPayloadBytes,
       handshakeTimeout: config.handshakeTimeoutMs,
@@ -380,6 +380,17 @@ export class DeviceConnection {
     if (admission.kind === 'ignore') return
     this.dialogueSeen = true
     if (admission.kind === 'stop') { this.stop(admission.cancelAgent); return }
+    if (admission.kind === 'exit') {
+      // The user closed the conversation: cancel any owned turn, play one
+      // goodbye, then hang — exactly the idle-farewell teardown, so the device
+      // reconnects asleep and only the wake word reopens the dialogue.
+      this.stop(true)
+      this.sendClient({ type: 'stt', text })
+      this.sendClient({ type: 'tts', state: 'start' })
+      this.farewellPending = true
+      this.speak(this.config.goodbye)
+      return
+    }
     if (busy && !this.config.allowBargeIn) return
     this.stop(true)
     const acousticWake = this.acousticWakePending

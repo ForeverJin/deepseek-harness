@@ -58,6 +58,7 @@ Linux 客户端开启 `XIAOZHI_SKIP_ACTIVATION=1`、`XIAOZHI_AUTO_LISTEN=1`、`X
 | `stopWords`、`cancelWords` | 官方同款 23 短语停止表、`[停止执行]` | 整句匹配才停止播报，或同时取消已接受的 Agent 轮次 |
 | `greeting` | `嗯` | 纯唤醒的单音节确认，不调用模型 |
 | `idleFarewellMs`、`farewell` | 120000、`时间过得真快，先聊到这里，想聊随时叫我哦。` | 准入输入静默该时长后播告别语并挂断（对齐官方 close_connection_no_voice_time），客户端自动重连待唤醒；0 关闭 |
+| `exitWords`、`goodbye` | `[再见, 拜拜, 晚安, 下次见, 回头见]`、`好的，下次再聊，想聊随时叫我哦。` | 整句命中结束语即播告别回应并挂断连接（对齐官方 exit_commands），客户端重连后等唤醒词再开对话；长句中包含结束语不触发 |
 | `dialogueTimeoutMs`、`echoGuardMs` | 60000、5000 | 对话窗口和近期播报回声过滤时间 |
 | `allowBargeIn` | true | 当前轮次或播放期间接受新的有效请求 |
 | `heartbeatMs`、`handshakeTimeoutMs`、`operationTimeoutMs` | 20000、10000、180000 | 连接存活检查、握手期限、已接受操作期限 |
