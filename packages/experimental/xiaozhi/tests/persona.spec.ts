@@ -49,16 +49,25 @@ describe('Persona prompt composition', () => {
     expect(VOICE_RULES).toContain('始终用中文回答')
     expect(VOICE_RULES).toContain('至多放一个表情')
   })
+
+  it('routes goodbye expressions through the exit-intent tool', () => {
+    expect(VOICE_RULES).toContain('handle_exit_intent')
+    expect(VOICE_RULES).toContain('say_goodbye')
+  })
 })
 
 describe('Voice preset definition', () => {
-  it('builds the persona section over the persistent shell group', () => {
+  it('builds the persona section, exit tool, and persistent shell group', () => {
     const definition = personaPresetDefinition()
     expect(definition.id).toBe(PERSONA_PRESET_ID)
-    const [persona, shell] = definition.plugins
+    const [persona, exitTool, shell] = definition.plugins
     expect(persona).toMatchObject({
       name: '@deepseek-ai/dsh-persona',
       config: { prefix: '{{xiaozhi_persona}}', complete: true, includeRuntimeContext: false },
+    })
+    expect(exitTool).toMatchObject({
+      id: 'exit-intent',
+      name: '@deepseek-ai/dsh-experimental-xiaozhi/exit-tool',
     })
     expect(shell).toMatchObject({ name: 'cordis:group', group: true, isolate: { terminals: true } })
     const rows = shell?.config as { id: string; name: string; disabled?: boolean }[]

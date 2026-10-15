@@ -91,6 +91,8 @@ export class DeviceConnection {
   private readonly handshake: NodeJS.Timeout
   private idleTimer: NodeJS.Timeout | undefined
   private farewellPending = false
+  /** Farewell the model left in handle_exit_intent's say_goodbye, spoken when its turn produced no prose. */
+  private exitGoodbye: string | undefined
   /** Whether this connection ever admitted wake, prompt, or stop input. */
   private dialogueSeen = false
   /** Acoustic wake may also arrive as a prefixed ASR transcript. */
@@ -107,7 +109,10 @@ export class DeviceConnection {
     private readonly onClose: () => void,
   ) {
     this.sessionId = SessionId(binding.sessionId)
-    this.gate = new WakeGate(config.wakeWords, config.stopWords, config.dialogueTimeoutMs, config.echoGuardMs, config.cancelWords, config.exitWords)
+    this.gate = new WakeGate(
+      config.wakeWords, config.stopWords, config.dialogueTimeoutMs, config.echoGuardMs,
+      config.cancelWords, config.exitWords,
+    )
     this.provider = new WebSocket(config.voiceUrl, {
       headers: { Authorization: `Bearer ${config.voiceToken}` }, maxPayload: config.maxPayloadBytes,
       handshakeTimeout: config.handshakeTimeoutMs,
@@ -400,6 +405,7 @@ export class DeviceConnection {
     }
     // Fresh user activity cancels a pending farewell and restarts the clock.
     this.farewellPending = false
+    this.exitGoodbye = undefined
     this.armIdleFarewell()
     if (admission.kind === 'wake') {
       this.sendClient({ type: 'stt', text })
@@ -469,6 +475,16 @@ export class DeviceConnection {
       if (this.openingTurn === undefined) throw new Error('User message has no open turn')
       request.turn = this.openingTurn
     }
+    // The model recognized a goodbye (official handle_exit_intent): the turn
+    // keeps running so the model's own farewell reply streams out and plays,
+    // and the pending-farewell teardown hangs the connection once it drains.
+    // A later admitted prompt cancels the pending farewell as usual.
+    if (event.type === 'tool/call' && event.data.name === 'handle_exit_intent' && event.data.turn === request.turn) {
+      let goodbye: unknown
+      try { goodbye = (JSON.parse(event.data.arguments) as Record<string, unknown>).say_goodbye } catch { goodbye = undefined }
+      this.exitGoodbye = typeof goodbye === 'string' && goodbye.trim() !== '' ? goodbye : undefined
+      this.farewellPending = true
+    }
     if (request.control.signal.aborted) return
     if (event.type === 'assistant/message' && event.data.turn === request.turn && event.data.interrupted !== true) {
       const content = event.data.message.content
@@ -497,9 +513,16 @@ export class DeviceConnection {
         const answer = speechText(request.answer)
         if (answer.length > this.config.maxTextChars) { this.fail(new Error('Answer exceeds speech limit')); return }
         // Streaming already queued the reply; speak() here only covers event
-        // shapes that produced no enqueueable message.
-        if (!request.answered) this.enqueueAnswer(answer)
-        else if (!answer && this.speech === undefined && this.speechQueue.length === 0) {
+        // shapes that produced no enqueueable message. A goodbye turn that
+        // committed no prose (a bare handle_exit_intent call) still speaks the
+        // farewell the model left in say_goodbye.
+        if (!request.answered) {
+          if (answer === '' && this.farewellPending) {
+            const goodbye = this.exitGoodbye !== undefined && this.exitGoodbye.length <= this.config.maxTextChars
+              ? this.exitGoodbye : this.config.goodbye
+            this.enqueueAnswer(goodbye)
+          } else this.enqueueAnswer(answer)
+        } else if (!answer && this.speech === undefined && this.speechQueue.length === 0) {
           this.clearDeadline()
           this.sendClient({ type: 'tts', state: 'stop' })
           this.gate.resume(Date.now())

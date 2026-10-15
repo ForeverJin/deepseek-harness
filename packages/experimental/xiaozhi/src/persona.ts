@@ -34,7 +34,7 @@ export const VOICE_RULES = `你运行在一台语音设备上，回复会被 TTS
 2. 禁止 Markdown：不用加粗、标题、列表符号和代码块；多项内容用自然的口语衔接。
 3. 用户语音经识别可能存在同音错字，理解真实意图即可，不要纠正错别字。
 4. 讲长内容（故事、知识）先讲核心，再问用户要不要继续。
-5. 用户说"再见""拜拜""晚安"时自然告别，简短收尾。
+5. 用户想结束对话时（"再见""拜拜""晚安""先到这里"等告别表达），调用 handle_exit_intent 工具，在 say_goodbye 里给出一句简短温暖的告别语；调用后的最终回复就是把这句告别语自然说出来，不要再展开新话题。
 6. 始终用中文回答，即使提问是其他语言；只有用户明确要求换语言时才换。
 7. 每条回复开头至多放一个表情（从 🙂😆🤔😢😠😲😴 中选），正文里不再出现任何表情。`
 
@@ -65,9 +65,10 @@ export function personaPrompt(persona: string, now: Date = new Date()): string {
 }
 
 /**
- * The voice preset definition: a complete persona section over the persistent
- * shell group the minimal preset ships, so a voice session keeps its tools
- * while gaining a speech-shaped identity.
+ * The voice preset definition: a complete persona section, the goodbye tool,
+ * and the persistent shell group the minimal preset ships, so a voice session
+ * keeps its tools while gaining a speech-shaped identity. Instantiating the
+ * exit tool here scopes its registration to xiaozhi sessions only.
  * @returns the definition handed to the agent preset registry.
  */
 export function personaPresetDefinition(): PresetDefinition {
@@ -80,6 +81,13 @@ export function personaPresetDefinition(): PresetDefinition {
         id: 'persona',
         name: '@deepseek-ai/dsh-persona',
         config: { prefix: `{{${PERSONA_VARIABLE}}}`, complete: true, includeRuntimeContext: false },
+      },
+      {
+        // Self-referencing subpath export of this package (see package.json
+        // exports): the loader resolves it like any sibling plugin, and preset
+        // instantiation keeps the tool out of non-voice sessions.
+        id: 'exit-intent',
+        name: '@deepseek-ai/dsh-experimental-xiaozhi/exit-tool',
       },
       {
         id: 'persistent-shell',
